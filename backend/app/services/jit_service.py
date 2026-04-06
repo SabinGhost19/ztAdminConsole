@@ -43,9 +43,10 @@ async def create_jit_request(namespace: str, name: str, user_email: str, duratio
             }
         },
         "spec": {
+            "developerId": user_email,
             "targetNamespace": namespace,
-            "role": role,
-            "durationMinutes": duration,
+            "requestedRole": role,
+            "duration": f"{duration}m",
             "reason": f"Requested via UI by {user_email}"
         }
     }
