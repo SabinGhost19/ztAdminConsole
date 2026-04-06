@@ -10,14 +10,19 @@ RUN adduser --system --group --disabled-password --home /app appuser \
     && chown -R appuser:appuser /app
 
 USER appuser
+ENV HOME=/app
+
+# Create venv and add to PATH to ensure clean package isolation 
+RUN python -m venv /app/venv
+ENV PATH="/app/venv/bin:$PATH"
 
 COPY --chown=appuser:appuser requirements.txt .
-RUN pip install --no-cache-dir --user -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
 
 COPY --chown=appuser:appuser . .
 
 EXPOSE 8000
 
-ENV PATH="/app/.local/bin:${PATH}"
+ENV PYTHONPATH="/app"
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["python", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

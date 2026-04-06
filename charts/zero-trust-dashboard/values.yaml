@@ -1,3 +1,5 @@
+fullnameOverride: "zero-trust-dashboard"
+
 frontend:
   replicaCount: 1
   image:
