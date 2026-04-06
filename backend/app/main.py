@@ -17,23 +17,17 @@ app.add_exception_handler(Exception, global_exception_handler)
 
 @app.middleware("http")
 async def require_identity_header(request: Request, call_next):
-    # Skip pentry docs
-    if request.url.path.startswith("/docs") or request.url.path.startswith("/openapi.json"):
-        return await call_next(request)
-        
-    email = request.headers.get("X-Forwarded-Email")
-    if not email:
-        trace_id = request.headers.get("X-Request-ID", str(uuid.uuid4()))
-        err = APIErrorDetails(
-            error_code="IDENTITY_MISSING",
-            message="Acces respins. Identitatea utilizatorului nu a putut fi extrasă.",
-            technical_details="Header-ul 'X-Forwarded-Email' injectat de Identity-Aware Proxy (Keycloak) lipsește.",
-            component="API_GATEWAY",
-            trace_id=trace_id,
-            action_required="Asigurați-vă că accesați interfața prin proxy-ul de securitate."
-        )
-        return JSONResponse(status_code=401, content=err.model_dump())
+    # Domiciliat temporar deschis: bypass complet de autentificare (până când OIDC va fi reactivat)
+    # Totuși, injectăm o identitate de mock pentru componentele JIT care se bazează pe acest email
+    email = request.headers.get("X-Forwarded-Email", "admin@devsecops.licenta.ro")
     
+    # Suprascriem headers-urile temporar
+    from starlette.datastructures import MutableHeaders
+    new_headers = MutableHeaders(request.headers)
+    new_headers["X-Forwarded-Email"] = email
+    request._headers = new_headers
+    request.scope.update(headers=request.headers.raw)
+
     response = await call_next(request)
     return response
 

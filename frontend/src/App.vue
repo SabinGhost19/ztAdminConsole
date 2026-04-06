@@ -48,7 +48,7 @@ function getInitials(name: string) {
 
 <template>
   <v-app>
-    <-> Top App Bar -->
+    <!-- Top App Bar -->
     <v-app-bar 
       elevation="1" 
       color="surface" 
@@ -57,8 +57,8 @@ function getInitials(name: string) {
     >
       <v-app-bar-nav-icon @click="drawer = !drawer" color="secondary" />
       <v-toolbar-title class="text-subtitle-1 font-weight-medium">
-        <v-icon color="primary" class="mr-2" size="large">mdi-google-cloud</v-icon>
-        Google Cloud Anthos (ZTA)
+        <v-icon color="primary" class="mr-2" size="large">mdi-kubernetes</v-icon>
+        Zero-Trust Admin Console
       </v-toolbar-title>
 
       <v-spacer></v-spacer>
@@ -114,7 +114,7 @@ function getInitials(name: string) {
       </v-avatar>
     </v-app-bar>
 
-    <-> Side Navigation Sidebar -->
+    <!-- Side Navigation Sidebar -->
     <v-navigation-drawer 
       v-model="drawer" 
       color="surface" 
@@ -139,7 +139,7 @@ function getInitials(name: string) {
       </v-list>
     </v-navigation-drawer>
 
-    <-> Main Content Area -->
+    <!-- Main Content Area -->
     <v-main class="bg-background">
       <v-container fluid class="pa-6">        
         <!-- Global Notifications Layer (Pinia Toast System) -->
@@ -168,7 +168,7 @@ function getInitials(name: string) {
                   elevation="0"
                 >
                   <v-expansion-panel-text>
-                    <div class="font-mono bg-black pa-2 rounded mt-1" style="word-break: break-all; white-space: pre-wrap;">
+                    <div class="font-mono pa-2 rounded mt-1" style="background-color: rgba(255, 255, 255, 0.15); word-break: break-all; white-space: pre-wrap; font-size: 0.85rem;">
                       Code: {{ alert.error_code }}<br>
                       Component: {{ alert.component }}<br>
                       Trace: {{ alert.trace_id }}<br>
@@ -181,7 +181,7 @@ function getInitials(name: string) {
             </v-alert>
           </transition-group>
         </div>
-        <-> Breadcrumbs -->
+        <!-- Breadcrumbs -->
         <v-breadcrumbs 
           :items="[{ title: 'Home', disabled: false, href: '/' }, { title: String(route.name), disabled: true }]" 
           class="pa-0 mb-4 text-caption text-secondary"

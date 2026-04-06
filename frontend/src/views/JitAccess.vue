@@ -163,7 +163,7 @@ function copyKubeconfig(sessionId: string) {
     <h1 class="text-h5 font-weight-medium mb-4 text-primary">JIT Access Portal</h1>
     
     <v-row>
-      <-> JIT Wizard Form -->
+      <!-- JIT Wizard Form -->
       <v-col cols="12" md="5" lg="4">
         <v-card class="gc-border h-100" style="border: 1px solid rgba(var(--v-theme-on-surface), 0.12)" flat>
           <v-card-title class="font-weight-medium pb-2 text-primary">Ephemeral Access Wizard (IAM)</v-card-title>
@@ -229,7 +229,7 @@ function copyKubeconfig(sessionId: string) {
               Request Access
             </v-btn>
 
-            <-> Afișare comandă generată HTTP mock response -->
+            <!-- Afișare comandă generată HTTP mock response -->
             <v-expand-transition>
               <div v-if="generatedCommand" class="mt-4">
                 <div class="d-flex align-center justify-space-between bg-surface-variant pa-2 rounded gc-border">
@@ -251,7 +251,7 @@ function copyKubeconfig(sessionId: string) {
         </v-card>
       </v-col>
       
-      <-> Active Sessions Admin -->
+      <!-- Active Sessions Admin -->
       <v-col cols="12" md="7" lg="8">
         <v-card class="gc-border h-100" style="border: 1px solid rgba(var(--v-theme-on-surface), 0.12)" flat>
           <v-card-title class="font-weight-medium pb-2 text-error">
@@ -352,7 +352,7 @@ function copyKubeconfig(sessionId: string) {
       </v-col>
     </v-row>
 
-    <-> Revoke Confirmation Dialog -->
+    <!-- Revoke Confirmation Dialog -->
     <v-dialog v-model="isConfirmRevokeOpen" max-width="400" persistent>
       <v-card class="gc-border" flat>
         <v-card-title class="text-error font-weight-medium pt-4 bg-error-lighten-5">
