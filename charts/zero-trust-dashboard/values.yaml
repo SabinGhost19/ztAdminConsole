@@ -1,0 +1,47 @@
+frontend:
+  replicaCount: 1
+  image:
+    repository: ghcr.io/sabinghost19/ztadminconsole-frontend
+    pullPolicy: IfNotPresent
+    tag: "latest"
+  resources:
+    limits:
+      cpu: 100m
+      memory: 128Mi
+    requests:
+      cpu: 50m
+      memory: 64Mi
+
+backend:
+  replicaCount: 1
+  image:
+    repository: ghcr.io/sabinghost19/ztadminconsole-backend
+    pullPolicy: IfNotPresent
+    tag: "latest"
+  resources:
+    limits:
+      cpu: 200m
+      memory: 256Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi
+
+ingress:
+  enabled: true
+  className: "nginx"
+  annotations:
+    nginx.ingress.kubernetes.io/auth-url: "https://auth.devsecops.licenta.ro/oauth2/auth"
+    nginx.ingress.kubernetes.io/auth-signin: "https://auth.devsecops.licenta.ro/oauth2/start?rd=$scheme://$host$request_uri"
+    nginx.ingress.kubernetes.io/auth-response-headers: "X-Forwarded-Email"
+  hosts:
+    - host: dashboard.devsecops.licenta.ro
+      paths:
+        - path: /
+          pathType: Prefix
+
+serviceAccount:
+  create: true
+  name: "zero-trust-dashboard-sa"
+
+networkPolicies:
+  enabled: false

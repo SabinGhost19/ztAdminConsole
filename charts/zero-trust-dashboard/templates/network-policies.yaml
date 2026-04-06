@@ -1,0 +1,62 @@
+{{- if .Values.networkPolicies.enabled -}}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "zero-trust-dashboard.fullname" . }}-frontend-policy
+spec:
+  podSelector:
+    matchLabels:
+      app: {{ include "zero-trust-dashboard.name" . }}-frontend
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Allow traffic from Ingress Controller strictly
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx # Adjust based on your ingress controller namespace
+      ports:
+        - protocol: TCP
+          port: 80
+  egress:
+    # Allow traffic only to the Backend Pod
+    - to:
+        - podSelector:
+            matchLabels:
+              app: {{ include "zero-trust-dashboard.name" . }}-backend
+      ports:
+        - protocol: TCP
+          port: 8000
+    # Allow DNS resolution
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "zero-trust-dashboard.fullname" . }}-backend-policy
+spec:
+  podSelector:
+    matchLabels:
+      app: {{ include "zero-trust-dashboard.name" . }}-backend
+  policyTypes:
+    - Ingress
+  ingress:
+    # Allow traffic ONLY from the frontend pod within the same namespace
+    - from:
+        - podSelector:
+            matchLabels:
+              app: {{ include "zero-trust-dashboard.name" . }}-frontend
+      ports:
+        - protocol: TCP
+          port: 8000
+{{- end -}}

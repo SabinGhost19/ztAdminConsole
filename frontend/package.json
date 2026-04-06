@@ -1,0 +1,33 @@
+{
+  "name": "userinterfacedashboard",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "directories": {
+    "doc": "doc"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "vue-tsc && vite build",
+    "preview": "vite preview",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "dependencies": {
+    "@guolao/vue-monaco-editor": "^1.6.0",
+    "@mdi/font": "^7.4.47",
+    "@vitejs/plugin-vue": "^6.0.5",
+    "axios": "^1.14.0",
+    "pinia": "^3.0.4",
+    "typescript": "^6.0.2",
+    "vite": "^8.0.5",
+    "vue": "^3.5.32",
+    "vue-monaco-editor": "^0.0.19",
+    "vue-router": "^4.6.4",
+    "vue-tsc": "^3.2.6",
+    "vuetify": "^3.12.5"
+  }
+}
