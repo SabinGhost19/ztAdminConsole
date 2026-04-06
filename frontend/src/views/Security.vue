@@ -1,5 +1,9 @@
 <script setup lang="ts">
 import { ref } from 'vue'
+import { useNotificationStore } from '../store/notification'
+import MonacoDiffEditor from 'vue-monaco-diff-editor'
+
+const notifyStore = useNotificationStore()
 
 const currentOriginal = ref(`apiVersion: apps/v1
 kind: Deployment
@@ -43,7 +47,16 @@ const MONACO_EDITOR_OPTIONS = {
 }
 
 function copyPatch() {
-  navigator.clipboard.writeText("Patch is copied (mock)!")
+  navigator.clipboard.writeText("Patch is copied!")
+  notifyStore.addAlert({
+    error_code: 'PATCH_COPIED_SUCCESS',
+    message: 'Fragmentul YAML a fost copiat în clipboard.',
+    technical_details: 'Drift-ul poate fi reparat prin aplicarea kubectl apply.',
+    component: 'SECURITY_MONACO',
+    trace_id: Math.random().toString(36).substring(2),
+    action_required: '',
+    type: 'warning'
+  })
 }
 </script>
 

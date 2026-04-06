@@ -2,7 +2,7 @@ from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import JSONResponse
 from app.core.k8s import init_k8s
 from app.middleware.errors import global_exception_handler
-from app.api import jit_routes
+from app.api import jit_routes, zta_routes, zts_routes
 from app.models.jit import APIErrorDetails
 import uuid
 
@@ -43,3 +43,5 @@ async def startup_event():
     await init_k8s()
 
 app.include_router(jit_routes.router, prefix="/api/v1/jit", tags=["JIT Access Module"])
+app.include_router(zta_routes.router, prefix="/api/v1/zta", tags=["ZTA Controller Module"])
+app.include_router(zts_routes.router, prefix="/api/v1/zts", tags=["Zero-Trust Secret Delegation"])

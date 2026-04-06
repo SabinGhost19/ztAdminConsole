@@ -1,5 +1,9 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
+import { api } from '../api/axios'
+import { useNotificationStore } from '../store/notification'
+
+const notifyStore = useNotificationStore()
 
 const step = ref(1)
 const isSubmitting = ref(false)
@@ -28,10 +32,48 @@ const isStep1Valid = computed(() => form.value.name.length > 2 && form.value.ima
 
 function submitDeclaration() {
   isSubmitting.value = true
-  setTimeout(() => {
-    isSubmitting.value = false
-    step.value = 1
-  }, 1500)
+  const payload = {
+    name: form.value.name || 'myapp',
+    namespace: form.value.namespace || 'default',
+    labels: { app: form.value.name },
+    ingress_host: `${form.value.name}.devsecops.licenta.ro`,
+    image: form.value.image,
+    networkPolicy: {
+      ingressFromNamespace: form.value.ingressNamespace || 'none',
+      egressToNamespace: form.value.egressNamespace || 'none'
+    }
+  }
+
+  api.post('/zta/', payload)
+    .then(response => {
+      isSubmitting.value = false
+      step.value = 1
+      notifyStore.addAlert({
+        error_code: 'ZTA_CREATED_SUCCESS',
+        message: `Aplicația ZTA ${response.data.metadata?.name || 'cu succes'} a fost creată!`,
+        technical_details: JSON.stringify(response.data, null, 2),
+        component: 'ZTA_BUILDER',
+        trace_id: response.data.metadata?.uid || `TRC-${Math.random().toString(36).substring(2)}`,
+        action_required: 'Nu este necesară nicio altă acțiune. Operatorul cilium va prelua noile politici.',
+        type: 'warning' // 'warning' in Pinia store is auto-dismissed (green auto-dismiss workaround)
+      })
+    })
+    .catch(error => {
+       isSubmitting.value = false
+       // Axios interceptor deja plasează erorile 500/400 în store-ul notify.
+       // Dar aici, dacã eroarea nu e complet formatată, ajutãm UI-ul
+       if (!error.response) {
+         notifyStore.addAlert({
+           error_code: 'ZTA_BUILD_FAILURE',
+           message: 'Crearea a esuat în pre-flight validation.',
+           technical_details: error.message,
+           component: 'ZTA_BUILDER',
+           trace_id: `ERR-${Math.random().toString(36).substring(2)}`,
+           action_required: 'Acțiune locală sau corectare parametri.',
+           type: 'error'
+         })
+       }
+    })
 }
 </script>
 

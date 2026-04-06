@@ -1,6 +1,7 @@
-<script setup lang="ts">
+features pentru zts ai adaugat? cel de aici: zeroTrustSecretDOC ? ce operator face deployed la el? raspunde scurt. adauga aceasta logica de tratare de erori mai ales pe backend si cu afisare in frotnend mai ales te rog, pentru orice ar merge prost si nu este ok, sa fie vizibilitate toatla si afiasare totala. <script setup lang="ts">
 import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { useJitStore, JitSession } from '../store/jit'
+import { useNotificationStore } from '../store/notification'
 
 const jitStore = useJitStore()
 const sessions = computed(() => jitStore.sessions)
@@ -40,13 +41,23 @@ onUnmounted(() => {
 
 async function submitRequest() {
   try {
-    await jitStore.requestAccess({
+    const res = await jitStore.requestAccess({
       namespace: form.value.namespace,
       role: form.value.role,
       duration: form.value.duration
     });
     // Optional: UI representation
     generatedCommand.value = `export KUBECONFIG=~/.kube/cache/new-session.yaml\nkubectl auth whoami`
+    const notifyStore = useNotificationStore();
+    notifyStore.addAlert({
+        error_code: 'JIT_CREATED',
+        message: 'JIT Access acordat cu succes.',
+        technical_details: `Rolul ${form.value.role} în ns ${form.value.namespace}`,
+        component: 'JIT_OPERATOR',
+        trace_id: Math.random().toString(36).substring(2),
+        action_required: '',
+        type: 'warning'
+    });
   } catch (err) {
     // API throws, which gets caught in Pinia / Axios interceptors to show Global Trace Error!
   }
@@ -55,6 +66,16 @@ async function submitRequest() {
 function copyCommand() {
   navigator.clipboard.writeText(generatedCommand.value)
   copySuccess.value = true
+  const notifyStore = useNotificationStore();
+  notifyStore.addAlert({
+    error_code: 'COPIED',
+    message: 'Comanda Kubeconfig copiată în clipboard.',
+    technical_details: '',
+    component: 'JIT_UI',
+    trace_id: Math.random().toString(36).substring(2),
+    action_required: '',
+    type: 'warning'
+  });
   setTimeout(() => (copySuccess.value = false), 2000)
 }
 
@@ -122,7 +143,16 @@ function getTTLColorClass(expiresAtStr: string) {
 
 function copyKubeconfig(sessionId: string) {
   navigator.clipboard.writeText(`export KUBECONFIG=~/.kube/cache/${sessionId}.yaml\nkubectl config view`)
-  // Un mic snacbar ar fi usful dar mock pt simplitate
+  const notifyStore = useNotificationStore()
+  notifyStore.addAlert({
+    error_code: 'CLIPBOARD_SUCCESS',
+    message: 'Kubeconfig command copied.',
+    technical_details: 'Stored in clipboard successfully',
+    component: 'JIT_MODULE',
+    trace_id: `SYS-${Math.random().toString(36).substring(2)}`,
+    action_required: '',
+    type: 'warning' // Pinia auto-dismisses warnings
+  })
 }
 </script>
 

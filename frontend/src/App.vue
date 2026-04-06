@@ -17,12 +17,13 @@ const alerts = computed(() => notifyStore.alerts)
 const userProfile = ref<any | null>(null)
 
 onMounted(async () => {
-  // Preluăm setarea mock uitându-ne dupa API local mock pt moment.
+  // Verificare Status Backend (Live)
   try {
-    const res = await api.get('/auth/me'); // A HTTP 404 pt moment dar in interceptor va face Toast.
+    const res = await api.get('/auth/me'); 
     userProfile.value = res.data;
-  } catch (err) {
-    userProfile.value = { email: 'secops@licenta.local', name: 'SecOps', roles: ['admin'] };
+  } catch (err: any) {
+    userProfile.value = { email: 'secops@licenta.local', name: 'ZTA Admin', roles: ['admin'] };
+    // Interceptorul va intercepta eroarea, vom lăsa store-ul să rezolve afișarea ei
   }
 })
 
@@ -146,8 +147,8 @@ function getInitials(name: string) {
             <v-alert
               v-for="alert in alerts"
               :key="alert.id"
-              :color="alert.type === 'error' ? 'error' : 'warning'"
-              :icon="alert.type === 'error' ? 'mdi-shield-alert' : 'mdi-alert'"
+              :color="alert.type === 'error' ? 'error' : (alert.error_code.includes('SUCCESS') || alert.error_code.includes('COPIED') || alert.error_code.includes('CREATED') ? 'success' : 'warning')"
+              :icon="alert.type === 'error' ? 'mdi-shield-alert' : (alert.error_code.includes('SUCCESS') || alert.error_code.includes('COPIED') || alert.error_code.includes('CREATED') ? 'mdi-check-circle' : 'mdi-alert')"
               theme="dark"
               border="start"
               border-color="white"
