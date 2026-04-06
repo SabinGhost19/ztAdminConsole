@@ -7,7 +7,7 @@ logger = logging.getLogger("zero_trust_jit_service")
 
 # Constante pt CRD-ul JIT
 CRD_GROUP = "devsecops.licenta.ro"
-CRD_VERSION = "v1alpha1"
+CRD_VERSION = "v1"
 CRD_PLURAL = "jitaccessrequests"
 
 async def list_jit_requests(namespace: str = "") -> list:

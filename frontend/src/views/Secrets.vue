@@ -112,7 +112,7 @@ async function revokeZts(namespace: string, name: string) {
       <v-col cols="12" md="7" lg="8">
         <v-card class="gc-border h-100" style="border: 1px solid rgba(var(--v-theme-on-surface), 0.12)" flat>
            <v-card-title class="font-weight-medium pb-2 text-error">
-            <v-icon start color="error" class="mr-2">mdi-safe</v-icon> Vault Status
+            <v-icon start color="error" class="mr-2">mdi-lock-pattern</v-icon> Secret Manager Vault Delegations
            </v-card-title>
            <v-card-text>
             <v-table density="comfortable" class="border rounded" hover>

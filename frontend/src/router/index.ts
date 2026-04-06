@@ -22,6 +22,11 @@ const routes = [
     component: () => import('../views/Secrets.vue')
   },
   {
+    path: '/sca',
+    name: 'Supply Chain Attestation',
+    component: () => import('../views/Sca.vue')
+  },
+  {
     path: '/security',
     name: 'Security & Posture',
     component: () => import('../views/Security.vue')

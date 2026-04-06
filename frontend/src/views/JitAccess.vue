@@ -111,16 +111,18 @@ function getStatusColor(status: string) {
   if (status === 'ACTIVE') return 'success'
   if (status === 'EXPIRED') return 'secondary'
   if (status === 'REVOKED') return 'error'
+  if (status === 'TAMPERED') return 'error'
   if (status === 'PENDING') return 'warning'
   return 'secondary'
 }
 
 function getStatusIcon(status: string) {
-  if (status === 'ACTIVE') return 'mdi-check-circle-outline'
-  if (status === 'EXPIRED') return 'mdi-clock-time-eight-outline'
+  if (status === 'ACTIVE') return 'mdi-check-circle'
+  if (status === 'EXPIRED') return 'mdi-progress-clock'
   if (status === 'REVOKED') return 'mdi-cancel'
-  if (status === 'PENDING') return 'mdi-dots-horizontal-circle-outline'
-  return 'mdi-help-circle-outline'
+  if (status === 'TAMPERED') return 'mdi-alert'
+  if (status === 'PENDING') return 'mdi-dots-horizontal-circle'
+  return 'mdi-help-circle'
 }
 
 function getTTLPercentage(expiresAtStr: string, durationMin: number) {
@@ -164,9 +166,9 @@ function copyKubeconfig(sessionId: string) {
       <-> JIT Wizard Form -->
       <v-col cols="12" md="5" lg="4">
         <v-card class="gc-border h-100" style="border: 1px solid rgba(var(--v-theme-on-surface), 0.12)" flat>
-          <v-card-title class="font-weight-medium pb-2 text-primary">Developer Wizard</v-card-title>
+          <v-card-title class="font-weight-medium pb-2 text-primary">Ephemeral Access Wizard (IAM)</v-card-title>
           <v-card-text>
-            <p class="text-caption text-secondary mb-6">Cerere ephemeral access via TokenRequest API.</p>
+            <p class="text-caption text-secondary mb-6">Cerere ephemeral access via Kubernetes IAM & OIDC.</p>
             
             <v-text-field 
               v-model="form.namespace"
@@ -174,6 +176,7 @@ function copyKubeconfig(sessionId: string) {
               label="Target Namespace" 
               variant="outlined" 
               placeholder="e.g., default"
+              prepend-inner-icon="mdi-google-cloud"
               hide-details="auto"
               class="mb-4"
             ></v-text-field>
@@ -181,9 +184,10 @@ function copyKubeconfig(sessionId: string) {
             <v-select 
               v-model="form.role"
               density="compact" 
-              label="Requested Role" 
+              label="Google Cloud IAM / K8s Role" 
               :items="roles" 
               variant="outlined"
+              prepend-inner-icon="mdi-shield-account-variant"
               hide-details="auto"
               class="mb-4"
             ></v-select>
@@ -209,6 +213,7 @@ function copyKubeconfig(sessionId: string) {
               rows="2"
               class="mt-4"
               hide-details="auto"
+              prepend-inner-icon="mdi-text-box-edit-outline"
             ></v-textarea>
             
             <v-btn 
@@ -219,6 +224,7 @@ function copyKubeconfig(sessionId: string) {
               variant="flat" 
               elevation="0" 
               class="mt-6 text-none font-weight-medium"
+              prepend-icon="mdi-shield-key-outline"
             >
               Request Access
             </v-btn>
@@ -249,8 +255,8 @@ function copyKubeconfig(sessionId: string) {
       <v-col cols="12" md="7" lg="8">
         <v-card class="gc-border h-100" style="border: 1px solid rgba(var(--v-theme-on-surface), 0.12)" flat>
           <v-card-title class="font-weight-medium pb-2 text-error">
-            <v-icon start color="error" class="mr-2">mdi-shield-crown-outline</v-icon>
-            Admin Command Center
+            <v-icon start color="error" class="mr-2">mdi-google-cloud</v-icon>
+            IAM & Service Accounts Admin
           </v-card-title>
           <v-card-text>
             <p class="text-caption text-secondary mb-4">Monitorizează sesiunile active și execută procedurile Kill Switch.</p>
@@ -350,7 +356,7 @@ function copyKubeconfig(sessionId: string) {
     <v-dialog v-model="isConfirmRevokeOpen" max-width="400" persistent>
       <v-card class="gc-border" flat>
         <v-card-title class="text-error font-weight-medium pt-4 bg-error-lighten-5">
-          <v-icon color="error" class="mr-2">mdi-alert</v-icon> Confirm Kill Switch
+          <v-icon color="error" class="mr-2">mdi-alert-decagram</v-icon> Confirm Revoke IAM
         </v-card-title>
         <v-card-text class="pt-4">
           Ești pe cale să revoci sesiunea critică:

@@ -192,7 +192,7 @@ spec:
                  <div class="d-flex mt-6">
                   <v-btn variant="text" @click="step = 3">Edit Specs</v-btn>
                   <v-spacer></v-spacer>
-                  <v-btn color="success" @click="submitDeclaration" :loading="isSubmitting" variant="flat" prepend-icon="mdi-git">Push to Main</v-btn>
+                  <v-btn color="success" @click="submitDeclaration" :loading="isSubmitting" variant="flat" prepend-icon="mdi-google-cloud">Deploy ZTA Application</v-btn>
                 </div>
               </div>
             </v-stepper-window-item>
