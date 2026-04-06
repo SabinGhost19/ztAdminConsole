@@ -7,7 +7,7 @@ logger = logging.getLogger("zero_trust_drift_service")
 
 # ZTA Operator patches Drift to ZeroTrustApplications
 CRD_GROUP = "devsecops.licenta.ro"
-CRD_VERSION = "v1alpha1"
+CRD_VERSION = "v1"
 CRD_PLURAL = "zerotrustapplications"
 
 async def get_drift_status() -> list:

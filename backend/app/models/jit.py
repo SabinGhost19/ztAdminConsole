@@ -29,7 +29,7 @@ class JITAccessRequestStatus(BaseModel):
     roleBindingName: Optional[str] = None
 
 class JITAccessRequest(BaseModel):
-    apiVersion: str = "devsecops.licenta.ro/v1alpha1"
+    apiVersion: str = "devsecops.licenta.ro/v1"
     kind: str = "JITAccessRequest"
     metadata: Dict[str, Any]
     spec: JITAccessRequestSpec

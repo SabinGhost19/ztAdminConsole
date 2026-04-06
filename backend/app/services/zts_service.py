@@ -6,7 +6,7 @@ logger = logging.getLogger("zero_trust_zts_service")
 
 # Constante pt CRD-ul ZTS
 CRD_GROUP = "devsecops.licenta.ro"
-CRD_VERSION = "v1alpha1"
+CRD_VERSION = "v1"
 CRD_PLURAL = "zerotrustsecrets"
 
 async def list_zts_secrets(namespace: str = "") -> list:

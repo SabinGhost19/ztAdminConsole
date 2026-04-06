@@ -6,7 +6,7 @@ logger = logging.getLogger("zero_trust_zta_service")
 
 # Constante pt CRD-ul ZTA
 CRD_GROUP = "devsecops.licenta.ro"
-CRD_VERSION = "v1alpha1"
+CRD_VERSION = "v1"
 CRD_PLURAL = "zerotrustapplications"
 
 async def list_zta_applications(namespace: str = "") -> list:
