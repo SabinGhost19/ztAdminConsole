@@ -31,10 +31,7 @@ backend:
 ingress:
   enabled: true
   className: "nginx"
-  annotations:
-    nginx.ingress.kubernetes.io/auth-url: "https://auth.devsecops.licenta.ro/oauth2/auth"
-    nginx.ingress.kubernetes.io/auth-signin: "https://auth.devsecops.licenta.ro/oauth2/start?rd=$scheme://$host$request_uri"
-    nginx.ingress.kubernetes.io/auth-response-headers: "X-Forwarded-Email"
+  annotations: {}
   hosts:
     - host: dashboard.devsecops.licenta.ro
       paths:
