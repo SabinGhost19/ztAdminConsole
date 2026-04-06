@@ -68,7 +68,7 @@ async function submitSecretDeclaration() {
   }
 }
 
-async function revokeZts(namespace: str, name: str) {
+async function revokeZts(namespace: string, name: string) {
   try {
     await api.delete(`/zts/${namespace}/${name}`)
     notifyStore.addAlert({
