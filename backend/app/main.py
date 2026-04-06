@@ -36,6 +36,15 @@ async def startup_event():
     # Inițializează clientul k8s async la pornirea serverului.
     await init_k8s()
 
+@app.get("/api/v1/health", tags=["System"])
+async def health_check():
+    return {"status": "ok"}
+
+@app.get("/api/v1/auth/me", tags=["System"])
+async def get_current_user(request: Request):
+    email = request.headers.get("X-Forwarded-Email", "admin@devsecops.licenta.ro")
+    return {"email": email, "roles": ["admin"]}
+
 app.include_router(jit_routes.router, prefix="/api/v1/jit", tags=["JIT Access Module"])
 app.include_router(zta_routes.router, prefix="/api/v1/zta", tags=["ZTA Controller Module"])
 app.include_router(zts_routes.router, prefix="/api/v1/zts", tags=["Zero-Trust Secret Delegation"])
