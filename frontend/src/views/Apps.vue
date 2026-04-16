@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
+import type { AxiosError, AxiosResponse } from 'axios'
 import { api } from '../api/axios'
 import BuildLedgerGraph from '../components/BuildLedgerGraph.vue'
 import MerkleTreeExplorer from '../components/MerkleTreeExplorer.vue'
@@ -154,7 +155,7 @@ function submitDeclaration() {
   }
 
   api.post('/zta/', payload)
-    .then(response => {
+    .then((response: AxiosResponse<any>) => {
       isSubmitting.value = false
       step.value = 1
       dashboardStore.fetchApplications(true).catch(() => undefined)
@@ -169,7 +170,7 @@ function submitDeclaration() {
         type: 'warning' // 'warning' in Pinia store is auto-dismissed (green auto-dismiss workaround)
       })
     })
-    .catch(error => {
+    .catch((error: AxiosError<any>) => {
        isSubmitting.value = false
        // Axios interceptor deja plasează erorile 500/400 în store-ul notify.
        // Dar aici, dacã eroarea nu e complet formatată, ajutãm UI-ul
