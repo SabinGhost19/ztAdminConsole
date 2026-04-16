@@ -3,12 +3,14 @@ import { api } from '../api/axios'
 
 export interface JitSession {
   id: string;
-  user: string;
   namespace: string;
+  user: string;
   role: string;
   duration: number; // in minutes
   expiresAt: string; // ISO string
-  status: 'ACTIVE' | 'EXPIRED' | 'REVOKED' | 'PENDING';
+  status: 'ACTIVE' | 'APPROVED' | 'EXPIRED' | 'REVOKED' | 'PENDING' | 'DENIED';
+  message?: string;
+  sessionId?: string;
 }
 
 export const useJitStore = defineStore('jit', {
@@ -22,17 +24,16 @@ export const useJitStore = defineStore('jit', {
       this.isLoading = true;
       try {
         const response = await api.get('/jit/sessions');
-        
-        // Pydantic/K8s CRD map mapping to the UI format 
-        // using the Custom Objects API output from FastAPI Backend.
         this.sessions = response.data.map((crt: any) => ({
-           id: crt.metadata.name,
-           user: crt.metadata.annotations?.['jit.devsecops/user'] || 'Unknown',
-           namespace: crt.spec.targetNamespace,
-           role: crt.spec.role,
-           duration: crt.spec.durationMinutes,
-           expiresAt: crt.status?.expiresAt || new Date(Date.now() + crt.spec.durationMinutes * 60000).toISOString(),
-           status: crt.status?.state || 'PENDING'
+           id: crt.metadata?.name || crt.summary?.sessionId || 'jit-unknown',
+           namespace: crt.metadata?.namespace || crt.summary?.targetNamespace || 'default',
+           user: crt.summary?.developerId || crt.metadata?.annotations?.['jit.devsecops/user'] || 'Unknown',
+           role: crt.summary?.requestedRole || 'view',
+           duration: parseDurationMinutes(crt.summary?.duration),
+           expiresAt: crt.summary?.expiresAt || new Date().toISOString(),
+           status: normalizeStatus(crt.summary?.state),
+           message: crt.summary?.message,
+           sessionId: crt.summary?.sessionId,
         }));
       } catch (error) {
         console.error('Fetch sessions failed', error);
@@ -60,7 +61,27 @@ export const useJitStore = defineStore('jit', {
         await this.fetchSessions();
       } catch (error) {
         console.error('Revoke failed', error);
+        throw error;
       }
     }
   }
 })
+
+function parseDurationMinutes(duration: string | undefined) {
+  if (!duration) return 0
+  const normalized = String(duration).trim().toLowerCase()
+  if (normalized.endsWith('m')) return Number.parseInt(normalized, 10) || 0
+  if (normalized.endsWith('h')) return (Number.parseInt(normalized, 10) || 0) * 60
+  return Number.parseInt(normalized, 10) || 0
+}
+
+function normalizeStatus(value: string | undefined): JitSession['status'] {
+  const state = String(value || 'PENDING').toUpperCase()
+  if (state === 'RUNNING') return 'ACTIVE'
+  if (state === 'APPROVED') return 'APPROVED'
+  if (state === 'ACTIVE') return 'ACTIVE'
+  if (state === 'EXPIRED') return 'EXPIRED'
+  if (state === 'REVOKED') return 'REVOKED'
+  if (state.startsWith('DENIED') || state.startsWith('BLOCKED')) return 'DENIED'
+  return 'PENDING'
+}

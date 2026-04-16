@@ -21,13 +21,15 @@ rules:
   - apiGroups: ["", "apps", "networking.k8s.io", "security.istio.io", "crds.external-secrets.io"]
     resources:
       - pods
+      - configmaps
+      - events
       - namespaces
       - deployments
       - networkpolicies
       - authorizationpolicies
       - secrets
       - externalsecrets
-    verbs: ["get", "list", "watch"]
+    verbs: ["get", "list", "watch", "patch", "update"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding

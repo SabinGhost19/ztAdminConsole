@@ -1,36 +1,36 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { api } from '../api/axios'
 import { useNotificationStore } from '../store/notification'
+import { useDashboardStore } from '../store/dashboard'
 
 const notifyStore = useNotificationStore()
+const dashboardStore = useDashboardStore()
 
-const isLoading = ref(false)
-const secrets = ref<any[]>([])
+const isLoading = computed(() => dashboardStore.loadingSecrets)
+const secrets = computed(() => dashboardStore.secrets)
+const applications = computed(() => dashboardStore.applications)
 
 const form = ref({
   name: '',
   namespace: 'default',
-  vaultPath: '',
+  applicationName: '',
+  workloadName: '',
+  remotePath: '',
+  remoteKey: 'password',
+  localKey: 'DB_PASSWORD',
+  mappingType: 'EnvVar',
+  mountPath: '/var/run/secrets/certs/',
   targetSecret: '',
-  rotationInterval: '1h'
+  refreshInterval: '1m'
 })
 const isSubmitting = ref(false)
 
-async function fetchSecrets() {
-  isLoading.value = true
-  try {
-    const res = await api.get('/zts/')
-    secrets.value = res.data
-  } catch (err) {
-    // Tratate global prin Axios Interceptor. Tot aici aruncam toast
-  } finally {
-    isLoading.value = false
-  }
-}
-
 onMounted(() => {
-  fetchSecrets()
+  Promise.all([
+    dashboardStore.fetchSecrets(true),
+    dashboardStore.fetchApplications(),
+  ]).catch(() => undefined)
 })
 
 async function submitSecretDeclaration() {
@@ -39,17 +39,51 @@ async function submitSecretDeclaration() {
     const payload = {
       name: form.value.name,
       namespace: form.value.namespace,
-      vault_path: form.value.vaultPath,
-      target_secret: form.value.targetSecret,
-      rotation_interval: form.value.rotationInterval
+      applicationRef: {
+        name: form.value.applicationName,
+        namespace: form.value.namespace,
+      },
+      targetWorkload: {
+        kind: 'Deployment',
+        name: form.value.workloadName,
+        namespace: form.value.namespace,
+      },
+      secretStoreRef: {
+        kind: 'ClusterSecretStore',
+        name: 'vault-backend',
+      },
+      targetSecretName: form.value.targetSecret,
+      secretData: {
+        remotePath: form.value.remotePath,
+        mapping: [
+          {
+            remoteKey: form.value.remoteKey,
+            localKey: form.value.localKey,
+            type: form.value.mappingType,
+            mountPath: form.value.mappingType === 'VolumeMount' ? form.value.mountPath : undefined,
+          },
+        ],
+      },
+      zeroTrustConditions: {
+        requireVerifiedStatus: true,
+        timeBasedAccess: {
+          enabled: false,
+        },
+      },
+      lifecycle: {
+        refreshInterval: form.value.refreshInterval,
+        onUpdateAction: 'RollingRestart',
+      },
     }
     
     await api.post('/zts/', payload)
+    await dashboardStore.fetchSecrets(true)
+    await dashboardStore.fetchOverview(true)
     
     notifyStore.addAlert({
       error_code: 'ZTS_CREATED_SUCCESS',
       message: `Delegația Zero-Trust Secret '${form.value.name}' generată.`,
-      technical_details: `Path Vault delegat: ${form.value.vaultPath}`,
+      technical_details: `Path Vault delegat: ${form.value.remotePath}`,
       component: 'ZTS_BUILDER',
       trace_id: Math.random().toString(36).substring(2),
       action_required: 'Nu faceți nimic. Operatorul ZTA va valida imaginea, iar ESO va prelua secretul.',
@@ -57,12 +91,9 @@ async function submitSecretDeclaration() {
     })
     
     form.value.name = ''
-    form.value.vaultPath = ''
+    form.value.remotePath = ''
     form.value.targetSecret = ''
-    
-    fetchSecrets()
   } catch (err) {
-    // Interceptor catches standard backend K8s errors gracefully. 
   } finally {
     isSubmitting.value = false
   }
@@ -71,6 +102,8 @@ async function submitSecretDeclaration() {
 async function revokeZts(namespace: string, name: string) {
   try {
     await api.delete(`/zts/${namespace}/${name}`)
+    await dashboardStore.fetchSecrets(true)
+    await dashboardStore.fetchOverview(true)
     notifyStore.addAlert({
       error_code: 'ZTS_REVOKED_SUCCESS',
       message: `Delegația ZTS '${name}' ștearsă cu succes din sistem.`,
@@ -80,9 +113,7 @@ async function revokeZts(namespace: string, name: string) {
       action_required: '',
       type: 'warning'
     })
-    fetchSecrets()
   } catch (err) {
-    // Caught by interceptor
   }
 }
 </script>
@@ -100,9 +131,21 @@ async function revokeZts(namespace: string, name: string) {
             
             <v-text-field v-model="form.name" label="Nume CRD (ZTS)" variant="outlined" density="compact" hide-details="auto" class="mb-4"></v-text-field>
             <v-text-field v-model="form.namespace" label="Target Namespace" variant="outlined" density="compact" hide-details="auto" class="mb-4"></v-text-field>
-            <v-text-field v-model="form.vaultPath" label="HashiCorp Vault Path" placeholder="secret/data/product/db" variant="outlined" density="compact" hide-details="auto" class="mb-4"></v-text-field>
+            <v-select v-model="form.applicationName" :items="applications.map((item: any) => item.metadata.name)" label="Application Ref" variant="outlined" density="compact" hide-details="auto" class="mb-4"></v-select>
+            <v-text-field v-model="form.workloadName" label="Target Workload Name" variant="outlined" density="compact" hide-details="auto" class="mb-4"></v-text-field>
+            <v-text-field v-model="form.remotePath" label="HashiCorp Vault Path" placeholder="secret/data/product/db" variant="outlined" density="compact" hide-details="auto" class="mb-4"></v-text-field>
             <v-text-field v-model="form.targetSecret" label="Mapped Kubernetes Secret" variant="outlined" density="compact" hide-details="auto" class="mb-4"></v-text-field>
-            <v-text-field v-model="form.rotationInterval" label="Rotation Interval" placeholder="ex. 1h, 15m" variant="outlined" density="compact" hide-details="auto"></v-text-field>
+            <v-row>
+              <v-col cols="12" md="6">
+                <v-text-field v-model="form.remoteKey" label="Remote Key" variant="outlined" density="compact" hide-details="auto"></v-text-field>
+              </v-col>
+              <v-col cols="12" md="6">
+                <v-text-field v-model="form.localKey" label="Local Key" variant="outlined" density="compact" hide-details="auto"></v-text-field>
+              </v-col>
+            </v-row>
+            <v-select v-model="form.mappingType" :items="['EnvVar', 'VolumeMount']" label="Mapping Type" variant="outlined" density="compact" hide-details="auto" class="mb-4"></v-select>
+            <v-text-field v-if="form.mappingType === 'VolumeMount'" v-model="form.mountPath" label="Mount Path" variant="outlined" density="compact" hide-details="auto" class="mb-4"></v-text-field>
+            <v-text-field v-model="form.refreshInterval" label="Refresh Interval" placeholder="ex. 1m, 10m" variant="outlined" density="compact" hide-details="auto"></v-text-field>
             
             <v-btn :loading="isSubmitting" @click="submitSecretDeclaration" color="primary" block variant="flat" elevation="0" class="mt-6 text-none font-weight-medium">Authorize ESO Pull</v-btn>
           </v-card-text>
@@ -134,7 +177,7 @@ async function revokeZts(namespace: string, name: string) {
                 <tr v-for="zts in secrets" :key="zts.metadata.uid">
                   <td class="text-body-2 font-weight-medium">{{ zts.metadata.name }}</td>
                   <td class="font-mono text-caption text-secondary">{{ zts.metadata.namespace }}</td>
-                  <td class="font-mono text-caption text-secondary">{{ zts.spec.vaultPath }} -> {{ zts.spec.targetSecretName }}</td>
+                  <td class="font-mono text-caption text-secondary">{{ zts.spec.secretData?.remotePath }} -> {{ zts.summary.targetSecretName }}</td>
                   <td class="text-right">
                      <v-btn @click="revokeZts(zts.metadata.namespace, zts.metadata.name)" color="error" size="small" variant="text" icon="mdi-delete" title="Sterge delegarea ZTS"></v-btn>
                   </td>

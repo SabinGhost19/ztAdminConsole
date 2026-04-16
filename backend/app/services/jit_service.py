@@ -1,43 +1,35 @@
-from kubernetes_asyncio import client
 import logging
-from app.models.jit import JITAccessRequest, JITAccessRequestSpec
+
+from kubernetes_asyncio import client
+
 from app.middleware.errors import ZeroTrustException
+from app.services.k8s_scanner import JIT_PLURAL, scanner
+from app.services.serializers import serialize_jit_request
 
 logger = logging.getLogger("zero_trust_jit_service")
 
-# Constante pt CRD-ul JIT
-CRD_GROUP = "devsecops.licenta.ro"
-CRD_VERSION = "v1"
-CRD_PLURAL = "jitaccessrequests"
-
 async def list_jit_requests(namespace: str = "") -> list:
-    """Interoghează clusterul K8s folosind CustomObjectsApi pentru starea JIT-urilor."""
-    api = client.CustomObjectsApi()
-    
     try:
-        if namespace:
-            res = await api.list_namespaced_custom_object(
-                group=CRD_GROUP, version=CRD_VERSION, namespace=namespace, plural=CRD_PLURAL
-            )
-        else:
-            res = await api.list_cluster_custom_object(
-                group=CRD_GROUP, version=CRD_VERSION, plural=CRD_PLURAL
-            )
-        return res.get("items", [])
+        logger.info("Listing JIT requests", extra={"details": {"namespace": namespace or None}})
+        items = await scanner.list_custom_resources(plural=JIT_PLURAL, namespace=namespace or None)
+        serialized = [serialize_jit_request(item) for item in items]
+        logger.info("Listed JIT requests successfully", extra={"details": {"namespace": namespace or None, "count": len(serialized)}})
+        return serialized
     except Exception as e:
-        logger.error(f"Eroare listare JIT Request CRDs: {e}")
+        logger.exception(f"Eroare listare JIT Request CRDs: {e}", extra={"details": {"namespace": namespace or None}})
         raise e
 
 async def create_jit_request(namespace: str, name: str, user_email: str, duration: int, role: str) -> dict:
-    """Creează un JIT CRD în Kubernetes. Operatorul va reacționa dintr-un watcher la acest manifest."""
-    api = client.CustomObjectsApi()
-    
-    # Formăm corpul resursei conform CRD-ului
+    logger.info(
+        "Creating JIT request",
+        extra={"details": {"namespace": namespace, "name": name, "user": user_email, "duration": duration, "role": role}},
+    )
     manifest = {
-        "apiVersion": f"{CRD_GROUP}/{CRD_VERSION}",
+        "apiVersion": "devsecops.licenta.ro/v1",
         "kind": "JITAccessRequest",
         "metadata": {
             "name": name,
+            "namespace": namespace,
             "annotations": {
                 "jit.devsecops/user": user_email
             }
@@ -50,15 +42,13 @@ async def create_jit_request(namespace: str, name: str, user_email: str, duratio
             "reason": f"Requested via UI by {user_email}"
         }
     }
-    
-    res = await api.create_namespaced_custom_object(
-        group=CRD_GROUP,
-        version=CRD_VERSION,
+    payload = await scanner.create_custom_resource(
+        plural=JIT_PLURAL,
         namespace=namespace,
-        plural=CRD_PLURAL,
-        body=manifest
+        body=manifest,
     )
-    return res
+    logger.info("Created JIT request successfully", extra={"details": {"namespace": namespace, "name": name, "user": user_email}})
+    return payload
 
 async def revoke_jit_access(namespace: str, name: str):
     """
@@ -66,17 +56,12 @@ async def revoke_jit_access(namespace: str, name: str):
     prin aplicarea unui PATCH `status.state=REVOKED`. Aici ștergem resursa,
     ceea ce va forța operatorul (cu un on.delete) să steargă RoleBinding-ul.
     """
-    api = client.CustomObjectsApi()
-    
     try:
-        await api.delete_namespaced_custom_object(
-            group=CRD_GROUP,
-            version=CRD_VERSION,
-            namespace=namespace,
-            plural=CRD_PLURAL,
-            name=name
-        )
+        logger.info("Revoking JIT access", extra={"details": {"namespace": namespace, "name": name}})
+        await scanner.delete_custom_resource(plural=JIT_PLURAL, namespace=namespace, name=name)
+        logger.info("Revoked JIT access successfully", extra={"details": {"namespace": namespace, "name": name}})
     except client.exceptions.ApiException as e:
+        logger.exception(f"Failed revoking JIT access {namespace}/{name}", extra={"details": {"namespace": namespace, "name": name, "status": e.status}})
         if e.status == 404:
             raise ZeroTrustException(
                 error_code="JIT_NOT_FOUND",

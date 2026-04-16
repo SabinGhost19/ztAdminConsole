@@ -1,54 +1,43 @@
-from kubernetes_asyncio import client
 import logging
 import json
-from app.middleware.errors import ZeroTrustException
+
+from app.services.k8s_scanner import ZTA_PLURAL, scanner
+from app.services.serializers import serialize_zta_resource
 
 logger = logging.getLogger("zero_trust_drift_service")
 
-# ZTA Operator patches Drift to ZeroTrustApplications
-CRD_GROUP = "devsecops.licenta.ro"
-CRD_VERSION = "v1"
-CRD_PLURAL = "zerotrustapplications"
-
 async def get_drift_status() -> list:
-    """
-    Extrage toate ZeroTrustApplications din cluster
-    și le filtrează pe cele care au drift / încălcări (activeViolations populat)
-    """
-    api = client.CustomObjectsApi()
-    
     try:
-        res = await api.list_cluster_custom_object(
-            group=CRD_GROUP, version=CRD_VERSION, plural=CRD_PLURAL
-        )
-        
-        items = res.get("items", [])
+        logger.info("Computing drift status for ZTA applications")
+        items = await scanner.list_custom_resources(plural=ZTA_PLURAL)
         drifting_apps = []
-        
+
         for item in items:
-            status = item.get("status", {})
-            active_violations = status.get("activeViolations", [])
-            security_state = status.get("securityState", "Compliant")
-            
-            # Formatează un Payload pentru frontend
-            if active_violations or security_state != "Compliant":
-                # Mock Original GitOps source vs Current Drift
-                # In real life, Source of truth is item['spec'] and current state is drifted
-                original_yaml = json.dumps(item.get("spec", {}), indent=2)
-                
-                # Punem statusul ca modified YAML pentru a vedea vizual drift-ul in editor
-                drifted_yaml = original_yaml + "\n# --- DRIFT DETECTAT ---\n" + "\n".join([f"# VIOLATION: {v}" for v in active_violations])
-                
+            serialized = serialize_zta_resource(item)
+            status = serialized.get("status", {}) or {}
+            active_violations = (status.get("activeViolations", []) or [])
+            security_state = str(status.get("securityState", "Compliant") or "Compliant")
+            if active_violations or security_state not in {"Compliant", "PendingProvenance"} or status.get("lastError"):
+                original_yaml = json.dumps(serialized.get("spec", {}), indent=2, sort_keys=True)
+                current_state = {
+                    "securityState": security_state,
+                    "trustLevel": status.get("trustLevel"),
+                    "lastError": status.get("lastError"),
+                    "activeViolations": active_violations,
+                    "provenance": status.get("provenance", {}),
+                }
+                drifted_yaml = json.dumps(current_state, indent=2, sort_keys=True)
                 drifting_apps.append({
-                    "name": item["metadata"]["name"],
-                    "namespace": item["metadata"]["namespace"],
+                    "name": serialized["metadata"]["name"],
+                    "namespace": serialized["metadata"]["namespace"],
                     "state": security_state,
                     "violations": active_violations,
                     "original": original_yaml,
-                    "modified": drifted_yaml
+                    "modified": drifted_yaml,
+                    "lastError": status.get("lastError"),
                 })
-                
+        logger.info("Computed drift status successfully", extra={"details": {"applicationsScanned": len(items), "driftedApplications": len(drifting_apps)}})
         return drifting_apps
     except Exception as e:
-        logger.error(f"Eroare extragere drift ZTA: {e}")
+        logger.exception(f"Eroare extragere drift ZTA: {e}")
         raise e

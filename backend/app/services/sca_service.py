@@ -1,37 +1,41 @@
-from kubernetes_asyncio import client
 import logging
+
+from kubernetes_asyncio import client
+
 from app.middleware.errors import ZeroTrustException
+from app.services.k8s_scanner import SCA_PLURAL, scanner
+from app.services.serializers import serialize_sca_resource
 
 logger = logging.getLogger("zero_trust_sca_service")
 
-# Constante pt CRD-ul SCA
-CRD_GROUP = "devsecops.licenta.ro"
-CRD_VERSION = "v1"
-CRD_PLURAL = "supplychainattestations"
-
 async def list_sca_policies(namespace: str = "") -> list:
-    """Interoghează clusterul K8s pentru starea curentă a politicilor Supply Chain Attestation (SCA/nw)."""
-    api = client.CustomObjectsApi()
-    
     try:
-        if namespace:
-            # Although SCA is Cluster scoped in yaml, the kubernetes client might treat it as Cluster scope.
-            # Wait, `scope: Cluster` means we should always use `list_cluster_custom_object`.
-            pass
-        res = await api.list_cluster_custom_object(
-            group=CRD_GROUP, version=CRD_VERSION, plural=CRD_PLURAL
-        )
-        return res.get("items", [])
+        logger.info("Listing SCA policies")
+        items = await scanner.list_custom_resources(plural=SCA_PLURAL, cluster_scoped=True)
+        serialized = [serialize_sca_resource(item) for item in items]
+        logger.info("Listed SCA policies successfully", extra={"details": {"count": len(serialized)}})
+        return serialized
     except Exception as e:
-        logger.error(f"Eroare listare SCA CRDs: {e}")
+        logger.exception(f"Eroare listare SCA CRDs: {e}")
         raise e
 
-async def create_sca_policy(name: str, zta_name: str, zta_namespace: str, trusted_issuers: list, enforce_sbom: bool, on_policy_drift: str, user_email: str) -> dict:
-    """Creează un SCA CRD în Kubernetes."""
-    api = client.CustomObjectsApi()
-    
+async def create_sca_policy(
+    name: str,
+    user_email: str,
+    source_validation: dict,
+    provenance: dict,
+    vulnerability_policy: dict,
+    sbom_policy: dict,
+    policy_binding: dict,
+    strict_manifest_hash: dict,
+    runtime_enforcement: dict,
+) -> dict:
+    logger.info(
+        "Creating SCA policy",
+        extra={"details": {"name": name, "user": user_email, "trustedIssuers": source_validation.get("trustedIssuers", []), "trustedRepositories": provenance.get("trustedRepositories", []), "minSlsaLevel": provenance.get("minSlsaLevel")}},
+    )
     manifest = {
-        "apiVersion": f"{CRD_GROUP}/{CRD_VERSION}",
+        "apiVersion": "devsecops.licenta.ro/v1",
         "kind": "SupplyChainAttestation",
         "metadata": {
             "name": name,
@@ -40,34 +44,26 @@ async def create_sca_policy(name: str, zta_name: str, zta_namespace: str, truste
             }
         },
         "spec": {
-            "target": {
-                "ztaName": zta_name,
-                "ztaNamespace": zta_namespace
-            },
-            "sourceValidation": {
-                "enforceCosign": True,
-                "trustedIssuers": trusted_issuers
-            },
-            "sbomPolicy": {
-                "enforceSBOM": enforce_sbom,
-                "forbiddenPackages": []
-            },
-            "runtimeEnforcement": {
-                "enabled": True,
-                "onPolicyDrift": on_policy_drift
-            }
+            "sourceValidation": source_validation,
+            "provenance": provenance,
+            "vulnerabilityPolicy": vulnerability_policy,
+            "sbomPolicy": sbom_policy,
+            "policyBinding": policy_binding,
+            "strictManifestHash": strict_manifest_hash,
+            "runtimeEnforcement": runtime_enforcement,
         }
     }
-    
+
     try:
-        res = await api.create_cluster_custom_object(
-            group=CRD_GROUP,
-            version=CRD_VERSION,
-            plural=CRD_PLURAL,
-            body=manifest
+        payload = await scanner.create_custom_resource(
+            plural=SCA_PLURAL,
+            cluster_scoped=True,
+            body=manifest,
         )
-        return res
+        logger.info("Created SCA policy successfully", extra={"details": {"name": name, "user": user_email}})
+        return payload
     except client.exceptions.ApiException as e:
+        logger.exception(f"Failed creating SCA policy {name}", extra={"details": {"name": name, "status": e.status}})
         if e.status == 409:
             raise ZeroTrustException(
                 error_code="SCA_CONFLICT",
@@ -82,15 +78,12 @@ async def delete_sca_policy(name: str):
     """
     Șterge o politică SCA.
     """
-    api = client.CustomObjectsApi()
     try:
-        await api.delete_cluster_custom_object(
-            group=CRD_GROUP,
-            version=CRD_VERSION,
-            plural=CRD_PLURAL,
-            name=name
-        )
+        logger.info("Deleting SCA policy", extra={"details": {"name": name}})
+        await scanner.delete_custom_resource(plural=SCA_PLURAL, cluster_scoped=True, name=name)
+        logger.info("Deleted SCA policy successfully", extra={"details": {"name": name}})
     except client.exceptions.ApiException as e:
+        logger.exception(f"Failed deleting SCA policy {name}", extra={"details": {"name": name, "status": e.status}})
         if e.status == 404:
             raise ZeroTrustException(
                 error_code="SCA_NOT_FOUND",

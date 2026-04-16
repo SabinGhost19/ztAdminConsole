@@ -21,3 +21,8 @@ async def init_k8s():
 def get_custom_api():
     """Returnează o instanță async a CustomObjectsApi."""
     return client.CustomObjectsApi()
+
+
+def get_core_api():
+    """Returnează o instanță async a CoreV1Api."""
+    return client.CoreV1Api()

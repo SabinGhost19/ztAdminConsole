@@ -1,48 +1,47 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
-import { api } from '../api/axios'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useNotificationStore } from '../store/notification'
-import MonacoDiffEditor from 'vue-monaco-diff-editor'
+import { useDashboardStore } from '../store/dashboard'
 
 const notifyStore = useNotificationStore()
+const dashboardStore = useDashboardStore()
 
-const isLoading = ref(false)
-const driftedApps = ref<any[]>([])
 const selectedAppIndex = ref(0)
+const selectedApplication = ref('')
+const integrityDetails = ref<any | null>(null)
+const isLoading = computed(() => dashboardStore.loadingDrift)
+const driftedApps = computed(() => dashboardStore.driftItems)
+const applicationOptions = computed(() => dashboardStore.applicationOptions)
 
 const currentDrift = computed(() => driftedApps.value[selectedAppIndex.value])
 
-const MONACO_EDITOR_OPTIONS = {
-  automaticLayout: true,
-  formatOnType: true,
-  formatOnPaste: true,
-  readOnly: true,
-  renderSideBySide: true,
-  minimap: { enabled: false }
-}
-
 async function fetchDriftStatus() {
-  isLoading.value = true
-  try {
-    const res = await api.get('/drift/')
-    driftedApps.value = res.data
-  } catch (err) {
-    // handled globally
-  } finally {
-    isLoading.value = false
-  }
+  await dashboardStore.fetchDrift(true)
 }
 
 onMounted(() => {
   fetchDriftStatus()
+  dashboardStore.fetchApplications(true).catch(() => undefined)
+})
+
+watch(selectedApplication, async (value) => {
+  if (!value) {
+    integrityDetails.value = null
+    return
+  }
+  const [namespace, name] = value.split('/')
+  integrityDetails.value = await dashboardStore.fetchIntegrity(namespace, name, true)
 })
 
 function copyPatch() {
-  navigator.clipboard.writeText("Patch / YAML Source copied!")
+  const payload = currentDrift.value
+    ? `# Expected\n${currentDrift.value.original}\n\n# Current\n${currentDrift.value.modified}`
+    : 'No drift payload available.'
+  navigator.clipboard.writeText(payload)
   notifyStore.addAlert({
     error_code: 'PATCH_COPIED_SUCCESS',
     message: 'Fragmentul YAML a fost copiat în clipboard.',
-    technical_details: 'Drift-ul poate fi reparat prin aplicarea kubectl apply.',
+    technical_details: 'Drift-ul poate fi reparat prin reconciliere sau kubectl apply pe starea dorită.',
     component: 'SECURITY_MONACO',
     trace_id: Math.random().toString(36).substring(2),
     action_required: '',
@@ -76,7 +75,7 @@ function copyPatch() {
           <v-select
             v-if="driftedApps.length > 1"
             v-model="selectedAppIndex"
-            :items="driftedApps.map((a, i) => ({title: a.name, value: i}))"
+            :items="dashboardStore.driftOptions"
             variant="outlined" density="compact" hide-details class="ml-4" style="width: 200px"
           ></v-select>
         </v-toolbar-title>
@@ -93,27 +92,73 @@ function copyPatch() {
       </v-toolbar>
 
       <v-card-text class="pa-0 flex-grow-1 position-relative" style="min-height: 500px;">
-        <div class="d-flex align-center bg-surface-variant pa-2 gc-border-bottom text-caption font-weight-medium text-secondary">
-          <div class="w-50 text-center font-mono"><v-icon size="x-small" color="success" class="mr-1">mdi-lock-check</v-icon> Expected CRD State (GitOps/ZTA)</div>
-          <div class="w-50 text-center font-mono"><v-icon size="x-small" color="error" class="mr-1">mdi-lock-open-alert</v-icon> Active Drift Violations (Cluster)</div>
-        </div>
-        
-        <vue-monaco-diff-editor
-          theme="vs-dark"
-          originalLanguage="yaml"
-          modifiedLanguage="yaml"
-          :original="currentDrift.original"
-          :modified="currentDrift.modified"
-          :options="MONACO_EDITOR_OPTIONS"
-          class="w-100 h-100 position-absolute"
-        />
+        <v-row no-gutters>
+          <v-col cols="12" md="6" class="pa-4 gc-border-right">
+            <div class="text-caption font-weight-medium text-secondary mb-2">
+              <v-icon size="x-small" color="success" class="mr-1">mdi-lock-check</v-icon>
+              Expected CRD State (GitOps/ZTA)
+            </div>
+            <pre class="diff-block">{{ currentDrift.original }}</pre>
+          </v-col>
+          <v-col cols="12" md="6" class="pa-4">
+            <div class="text-caption font-weight-medium text-secondary mb-2">
+              <v-icon size="x-small" color="error" class="mr-1">mdi-lock-open-alert</v-icon>
+              Active Drift Violations (Cluster)
+            </div>
+            <pre class="diff-block">{{ currentDrift.modified }}</pre>
+          </v-col>
+        </v-row>
       </v-card-text>
     </v-card>
+
+    <v-row class="mt-4">
+      <v-col cols="12" lg="4">
+        <v-card class="gc-border" flat>
+          <v-card-title class="text-primary">Runtime Forensics Inspector</v-card-title>
+          <v-card-text>
+            <v-select v-model="selectedApplication" :items="applicationOptions" label="Select application" variant="outlined" density="compact" class="mb-4"></v-select>
+            <div v-if="integrityDetails" class="text-body-2">
+              <div class="mb-2">Falco CM: {{ integrityDetails.runtimeForensics?.localFalcoRuleConfigMap }}</div>
+              <div class="mb-2">Talon rule: {{ integrityDetails.runtimeForensics?.talonRuleReference }}</div>
+              <v-chip :color="integrityDetails.runtimeForensics?.localRulePresent ? 'success' : 'warning'" size="small" variant="tonal" class="mr-2">Falco {{ integrityDetails.runtimeForensics?.localRulePresent ? 'present' : 'missing' }}</v-chip>
+              <v-chip :color="integrityDetails.runtimeForensics?.talonRulePresent ? 'success' : 'warning'" size="small" variant="tonal">Talon {{ integrityDetails.runtimeForensics?.talonRulePresent ? 'patched' : 'missing' }}</v-chip>
+            </div>
+            <div v-else class="text-caption text-secondary">Selectează o aplicație pentru runtime-level enforcement evidence.</div>
+          </v-card-text>
+        </v-card>
+      </v-col>
+      <v-col cols="12" lg="8">
+        <v-card class="gc-border" flat>
+          <v-card-title class="text-primary">Sanction History</v-card-title>
+          <v-card-text>
+            <v-timeline density="compact" align="start" side="end">
+              <v-timeline-item v-for="(event, index) in (integrityDetails?.sanctionHistory || [])" :key="`${event.kind}-${index}`" size="small" dot-color="warning">
+                <div class="text-body-2 font-weight-medium">{{ event.action }}</div>
+                <div class="text-caption text-secondary">{{ event.message }}</div>
+                <div class="text-caption mt-1">{{ event.timestamp || 'timestamp unavailable' }}</div>
+              </v-timeline-item>
+            </v-timeline>
+            <div v-if="!(integrityDetails?.sanctionHistory || []).length" class="text-caption text-secondary">No sanction history available for the selected application.</div>
+          </v-card-text>
+        </v-card>
+      </v-col>
+    </v-row>
   </div>
 </template>
 
 <style scoped>
-/* Asigurăm că editorul ocupă toată zona */
 .h-100 { height: 100%; }
 .v-card-text { overflow: hidden; }
+.diff-block {
+  background: rgba(var(--v-theme-on-surface), 0.04);
+  border: 1px solid rgba(var(--v-theme-on-surface), 0.12);
+  border-radius: 12px;
+  padding: 16px;
+  min-height: 420px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow: auto;
+  font-family: 'Roboto Mono', monospace;
+  font-size: 0.8rem;
+}
 </style>

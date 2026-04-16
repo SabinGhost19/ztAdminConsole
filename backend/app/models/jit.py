@@ -11,6 +11,12 @@ class APIErrorDetails(BaseModel):
     component: str
     trace_id: str
     action_required: str
+    status_code: Optional[int] = None
+    request_method: Optional[str] = None
+    request_path: Optional[str] = None
+    timestamp: Optional[str] = None
+    error_type: Optional[str] = None
+    details: Optional[Dict[str, Any]] = None
 
 # ====================
 # MODELE JIT CRD

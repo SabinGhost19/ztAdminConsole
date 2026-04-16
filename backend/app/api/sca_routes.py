@@ -1,21 +1,23 @@
-from fastapi import APIRouter, Header, Depends
+from fastapi import APIRouter, Header
 from pydantic import BaseModel, Field
-from typing import List, Optional
+from typing import Any, Dict, List
+
 from app.services.sca_service import list_sca_policies, create_sca_policy, delete_sca_policy
 
 router = APIRouter()
 
 class ScaCreateIn(BaseModel):
-    name: str
-    zta_name: str
-    zta_namespace: str
-    trusted_issuers: List[str]
-    enforce_sbom: bool = True
-    on_policy_drift: str = "Isolate"
+    name: str = Field(..., title="Numele politicii SCA")
+    sourceValidation: Dict[str, Any] = Field(default_factory=dict)
+    provenance: Dict[str, Any] = Field(default_factory=dict)
+    vulnerabilityPolicy: Dict[str, Any] = Field(default_factory=dict)
+    sbomPolicy: Dict[str, Any] = Field(default_factory=dict)
+    policyBinding: Dict[str, Any] = Field(default_factory=dict)
+    strictManifestHash: Dict[str, Any] = Field(default_factory=dict)
+    runtimeEnforcement: Dict[str, Any] = Field(default_factory=dict)
 
 @router.get("/")
 async def get_all_scas():
-    # Extrage direct resuresele SupplyChainAttestation
     return await list_sca_policies()
 
 @router.post("/")
@@ -26,12 +28,14 @@ async def create_sca(
     owner = x_forwarded_email or "admin@licenta.ro"
     res = await create_sca_policy(
         name=payload.name,
-        zta_name=payload.zta_name,
-        zta_namespace=payload.zta_namespace,
-        trusted_issuers=payload.trusted_issuers,
-        enforce_sbom=payload.enforce_sbom,
-        on_policy_drift=payload.on_policy_drift,
-        user_email=owner
+        user_email=owner,
+        source_validation=payload.sourceValidation,
+        provenance=payload.provenance,
+        vulnerability_policy=payload.vulnerabilityPolicy,
+        sbom_policy=payload.sbomPolicy,
+        policy_binding=payload.policyBinding,
+        strict_manifest_hash=payload.strictManifestHash,
+        runtime_enforcement=payload.runtimeEnforcement,
     )
     return {"status": "created", "resource": res}
 

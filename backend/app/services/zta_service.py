@@ -1,66 +1,73 @@
-from kubernetes_asyncio import client
 import logging
+
+from kubernetes_asyncio import client
+
 from app.middleware.errors import ZeroTrustException
+from app.services.k8s_scanner import ZTA_PLURAL, scanner
+from app.services.serializers import serialize_zta_resource
 
 logger = logging.getLogger("zero_trust_zta_service")
 
-# Constante pt CRD-ul ZTA
-CRD_GROUP = "devsecops.licenta.ro"
-CRD_VERSION = "v1"
-CRD_PLURAL = "zerotrustapplications"
-
 async def list_zta_applications(namespace: str = "") -> list:
-    """Interoghează clusterul K8s pentru starea curentă a aplicațiilor Zero Trust."""
-    api = client.CustomObjectsApi()
-    
     try:
-        if namespace:
-            res = await api.list_namespaced_custom_object(
-                group=CRD_GROUP, version=CRD_VERSION, namespace=namespace, plural=CRD_PLURAL
-            )
-        else:
-            res = await api.list_cluster_custom_object(
-                group=CRD_GROUP, version=CRD_VERSION, plural=CRD_PLURAL
-            )
-        return res.get("items", [])
+        logger.info("Listing ZTA applications", extra={"details": {"namespace": namespace or None}})
+        items = await scanner.list_custom_resources(plural=ZTA_PLURAL, namespace=namespace or None)
+        serialized = [serialize_zta_resource(item) for item in items]
+        logger.info("Listed ZTA applications successfully", extra={"details": {"namespace": namespace or None, "count": len(serialized)}})
+        return serialized
     except Exception as e:
-        logger.error(f"Eroare listare ZTA CRDs: {e}")
+        logger.exception(f"Eroare listare ZTA CRDs: {e}", extra={"details": {"namespace": namespace or None}})
         raise e
 
-async def create_zta_application(namespace: str, name: str, user_email: str, labels: dict, ingress_host: str, policy_rules: dict, image: str) -> dict:
-    """Creează un ZTA CRD în Kubernetes, semnalând ZTA Operator să genereze politicile eBPF/Network."""
-    api = client.CustomObjectsApi()
-    
+async def create_zta_application(
+    namespace: str,
+    name: str,
+    user_email: str,
+    labels: dict,
+    annotations: dict,
+    image: str,
+    replicas: int,
+    security_policy_ref: dict,
+    network_zero_trust: dict,
+    waf_config: dict,
+    runtime_security: dict,
+) -> dict:
+    logger.info(
+        "Creating ZTA application",
+        extra={"details": {"namespace": namespace, "name": name, "image": image, "replicas": replicas, "securityPolicyRef": security_policy_ref}},
+    )
     manifest = {
-        "apiVersion": f"{CRD_GROUP}/{CRD_VERSION}",
+        "apiVersion": "devsecops.licenta.ro/v1",
         "kind": "ZeroTrustApplication",
         "metadata": {
             "name": name,
             "namespace": namespace,
             "annotations": {
-                "zta.devsecops/creator": user_email
+                "zta.devsecops/creator": user_email,
+                **annotations,
             },
-            "labels": labels
+            "labels": labels,
         },
         "spec": {
-            "ingress": {
-                "host": ingress_host
-            },
             "image": image,
-            "networkPolicy": policy_rules
-        }
+            "replicas": replicas,
+            "securityPolicyRef": security_policy_ref,
+            "networkZeroTrust": network_zero_trust,
+            "wafConfig": waf_config,
+            "runtimeSecurity": runtime_security,
+        },
     }
-    
+
     try:
-        res = await api.create_namespaced_custom_object(
-            group=CRD_GROUP,
-            version=CRD_VERSION,
+        payload = await scanner.create_custom_resource(
+            plural=ZTA_PLURAL,
             namespace=namespace,
-            plural=CRD_PLURAL,
-            body=manifest
+            body=manifest,
         )
-        return res
+        logger.info("Created ZTA application successfully", extra={"details": {"namespace": namespace, "name": name, "image": image}})
+        return payload
     except client.exceptions.ApiException as e:
+        logger.exception(f"Failed creating ZTA application {namespace}/{name}", extra={"details": {"namespace": namespace, "name": name, "status": e.status, "image": image}})
         if e.status == 409:
             raise ZeroTrustException(
                 error_code="ZTA_CONFLICT",
@@ -76,16 +83,12 @@ async def delete_zta_application(namespace: str, name: str):
     Șterge declarația ZTA, trimițând un trigger către operatorul ZTA care 
     va retrage regulile Cilium NetworkPolicies / Ingress-urile asociate.
     """
-    api = client.CustomObjectsApi()
     try:
-        await api.delete_namespaced_custom_object(
-            group=CRD_GROUP,
-            version=CRD_VERSION,
-            namespace=namespace,
-            plural=CRD_PLURAL,
-            name=name
-        )
+        logger.info("Deleting ZTA application", extra={"details": {"namespace": namespace, "name": name}})
+        await scanner.delete_custom_resource(plural=ZTA_PLURAL, namespace=namespace, name=name)
+        logger.info("Deleted ZTA application successfully", extra={"details": {"namespace": namespace, "name": name}})
     except client.exceptions.ApiException as e:
+        logger.exception(f"Failed deleting ZTA application {namespace}/{name}", extra={"details": {"namespace": namespace, "name": name, "status": e.status}})
         if e.status == 404:
             raise ZeroTrustException(
                 error_code="ZTA_NOT_FOUND",
