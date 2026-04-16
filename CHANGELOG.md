@@ -1,3 +1,10 @@
+## [1.1.3](https://github.com/SabinGhost19/ztAdminConsole/compare/v1.1.2...v1.1.3) (2026-04-16)
+
+
+### Bug Fixes
+
+* disable streaming ([06fec32](https://github.com/SabinGhost19/ztAdminConsole/commit/06fec32eedc41f00fe12f8edcd3b5e17a068b244))
+
 ## [1.1.2](https://github.com/SabinGhost19/ztAdminConsole/compare/v1.1.1...v1.1.2) (2026-04-16)
 
 
