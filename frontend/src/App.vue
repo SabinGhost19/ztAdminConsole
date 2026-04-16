@@ -69,9 +69,14 @@ function getInitials(name: string) {
 async function refreshBackendLogs() {
   backendLogsLoading.value = true
   try {
-    const response = await api.get('/system/logs?limit=80')
+    const response = await api.get('/system/logs', {
+      params: { limit: 80 },
+      skipGlobalErrorAlert: true,
+    })
     backendLogs.value = response.data.items || []
     backendLogsLastRefresh.value = new Date().toISOString()
+  } catch {
+    backendLogs.value = []
   } finally {
     backendLogsLoading.value = false
   }

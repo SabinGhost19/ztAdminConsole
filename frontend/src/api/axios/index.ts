@@ -9,6 +9,7 @@ type RequestMetadata = {
 type RequestConfigWithMetadata = InternalAxiosRequestConfig & {
   metadata?: RequestMetadata
   retry?: number
+  skipGlobalErrorAlert?: boolean
 }
 
 function createTraceId(prefix = 'REQ') {
@@ -43,6 +44,9 @@ api.interceptors.response.use(
     const notifyStore = useNotificationStore()
     const { response } = error;
     const config = error.config as RequestConfigWithMetadata | undefined
+    if (config?.skipGlobalErrorAlert) {
+      return Promise.reject(error)
+    }
     const traceId = response?.data?.trace_id || config?.metadata?.traceId || createTraceId('ERR')
     const durationMs = config?.metadata?.startedAt ? Date.now() - config.metadata.startedAt : undefined
     

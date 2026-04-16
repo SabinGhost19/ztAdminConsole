@@ -15,7 +15,7 @@ frontend:
       memory: 64Mi
 
 backend:
-  replicaCount: 1
+  replicaCount: 2
   image:
     repository: ghcr.io/sabinghost19/ztadminconsole-backend
     pullPolicy: IfNotPresent
