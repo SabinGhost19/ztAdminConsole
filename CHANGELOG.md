@@ -1,3 +1,10 @@
+## [1.1.2](https://github.com/SabinGhost19/ztAdminConsole/compare/v1.1.1...v1.1.2) (2026-04-16)
+
+
+### Bug Fixes
+
+* fsnotify watcher: too many open files ([6fd1c0c](https://github.com/SabinGhost19/ztAdminConsole/commit/6fd1c0c12a9b974c9226da7ad7eee24cee187114))
+
 ## [1.1.1](https://github.com/SabinGhost19/ztAdminConsole/compare/v1.1.0...v1.1.1) (2026-04-16)
 
 
