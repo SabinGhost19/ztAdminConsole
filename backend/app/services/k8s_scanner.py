@@ -3,9 +3,7 @@ from __future__ import annotations
 import logging
 import time
 
-from kubernetes_asyncio import client
-
-from app.core.k8s import get_custom_api
+from app.core.k8s import get_core_api, get_custom_api
 
 GROUP = "devsecops.licenta.ro"
 VERSION = "v1"
@@ -180,8 +178,9 @@ class K8sScannerService:
     async def list_pods(self) -> list[dict]:
         started = time.perf_counter()
         logger.info("Listing pods across all namespaces")
+        api = get_core_api()
         try:
-            response = await client.CoreV1Api().list_pod_for_all_namespaces()
+            response = await api.list_pod_for_all_namespaces()
             items = response.to_dict().get("items", []) or []
             logger.info(
                 "Listed pods across all namespaces successfully",

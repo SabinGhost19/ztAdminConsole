@@ -7,8 +7,6 @@ export const useDashboardStore = defineStore('dashboard', {
   state: () => ({
     overview: null as AnyRecord | null,
     loadingOverview: false,
-    realtimeConnected: false,
-    lastPulseAt: '',
     jitAnalytics: null as AnyRecord | null,
     applications: [] as AnyRecord[],
     loadingApplications: false,
@@ -46,12 +44,6 @@ export const useDashboardStore = defineStore('dashboard', {
     recentEvents(state) {
       return state.overview?.recentEvents || []
     },
-    realtimeStatus(state) {
-      return {
-        connected: state.realtimeConnected,
-        lastPulseAt: state.lastPulseAt,
-      }
-    },
     applicationOptions(state) {
       return state.applications.map((item) => ({
         title: `${item.metadata?.namespace || 'default'}/${item.metadata?.name || 'unknown'}`,
@@ -87,21 +79,16 @@ export const useDashboardStore = defineStore('dashboard', {
       try {
         const response = await api.get('/overview/')
         this.overview = response.data
+        try {
+          const jitAnalyticsResponse = await api.get('/jit/analytics')
+          this.jitAnalytics = jitAnalyticsResponse.data
+        } catch {
+          this.jitAnalytics = null
+        }
         return response.data
       } finally {
         this.loadingOverview = false
       }
-    },
-    applyRealtimePulse(payload: AnyRecord) {
-      if (payload.overview) {
-        this.overview = payload.overview
-      }
-      this.jitAnalytics = payload.jitAnalytics || null
-      this.lastPulseAt = payload.timestamp || ''
-      this.realtimeConnected = true
-    },
-    setRealtimeDisconnected() {
-      this.realtimeConnected = false
     },
     async fetchApplications(force = false) {
       if (this.applications.length && !force) {

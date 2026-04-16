@@ -1,6 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted } from 'vue'
-import { api } from '../api/axios'
+import { computed, onMounted } from 'vue'
 import { useDashboardStore } from '../store/dashboard'
 
 const dashboardStore = useDashboardStore()
@@ -10,30 +9,10 @@ const summary = computed(() => dashboardStore.summary)
 const trustScore = computed(() => dashboardStore.trustScore)
 const operatorHealth = computed(() => dashboardStore.operatorHealth)
 const recentEvents = computed(() => dashboardStore.recentEvents)
-const realtimeStatus = computed(() => dashboardStore.realtimeStatus)
 const jitAnalytics = computed(() => dashboardStore.jitAnalytics || { activeSessions: 0, blockedUsers: [], deniedByType: {} })
-
-let eventSource: EventSource | null = null
 
 onMounted(() => {
   dashboardStore.fetchOverview(true).catch(() => undefined)
-  eventSource = new EventSource(`${api.defaults.baseURL}/overview/stream`)
-  eventSource.addEventListener('pulse', (event: MessageEvent) => {
-    try {
-      const payload = JSON.parse(event.data)
-      dashboardStore.applyRealtimePulse(payload)
-    } catch {
-      dashboardStore.setRealtimeDisconnected()
-    }
-  })
-  eventSource.onerror = () => {
-    dashboardStore.setRealtimeDisconnected()
-  }
-})
-
-onUnmounted(() => {
-  eventSource?.close()
-  dashboardStore.setRealtimeDisconnected()
 })
 </script>
 
@@ -42,10 +21,6 @@ onUnmounted(() => {
     <div class="d-flex align-center justify-space-between mb-4">
       <h1 class="text-h5 font-weight-medium text-primary">Overview Dashboard</h1>
       <div class="d-flex align-center ga-3">
-        <v-chip :color="realtimeStatus.connected ? 'success' : 'warning'" variant="tonal">
-          <v-icon start size="small">{{ realtimeStatus.connected ? 'mdi-access-point' : 'mdi-access-point-off' }}</v-icon>
-          {{ realtimeStatus.connected ? 'Live stream active' : 'Live stream reconnecting' }}
-        </v-chip>
         <v-btn color="primary" variant="outlined" :loading="isLoading" @click="dashboardStore.fetchOverview(true)">
           <v-icon start>mdi-refresh</v-icon>
           Refresh Pulse
@@ -127,7 +102,7 @@ onUnmounted(() => {
         <v-card class="gc-border h-100" flat>
           <v-card-title class="text-primary">Security Event Feed</v-card-title>
           <v-card-text>
-            <div class="text-caption text-secondary mb-4">Last pulse {{ realtimeStatus.lastPulseAt || 'not yet received' }}</div>
+            <div class="text-caption text-secondary mb-4">Use Refresh Pulse to load the latest backend snapshot.</div>
             <v-timeline density="compact" align="start" side="end">
               <v-timeline-item
                 v-for="(event, index) in recentEvents"
@@ -162,10 +137,10 @@ onUnmounted(() => {
       </v-col>
       <v-col cols="12" md="6">
         <v-card class="gc-border" flat>
-          <v-card-title class="text-primary">Realtime Channel</v-card-title>
+          <v-card-title class="text-primary">Overview Refresh</v-card-title>
           <v-card-text>
-            <div class="text-body-2">The dashboard now consumes a server-sent event pulse for overview and JIT telemetry.</div>
-            <div class="text-caption text-secondary mt-2">If this card falls back to warning, verify ingress buffering and backend connectivity.</div>
+            <div class="text-body-2">Overview data is loaded on demand with the refresh button.</div>
+            <div class="text-caption text-secondary mt-2">No realtime stream is kept open between the browser and backend.</div>
           </v-card-text>
         </v-card>
       </v-col>
