@@ -14,6 +14,7 @@ const notifyStore = useNotificationStore()
 const dashboardStore = useDashboardStore()
 
 const step = ref(1)
+const builderPanels = ref<number[]>([])
 const isSubmitting = ref(false)
 const selectedApplication = ref('')
 const integrityDetails = ref<any | null>(null)
@@ -81,6 +82,14 @@ function ledgerIcon(status: string, itemId: string) {
   return 'mdi-progress-clock'
 }
 
+function formatLedgerDetails(details: unknown) {
+  if (typeof details === 'string') return details
+  if (details && typeof details === 'object') {
+    return JSON.stringify(details, null, 2)
+  }
+  return String(details ?? '')
+}
+
 const integrityCriticalIssues = computed(() => {
   const details = integrityDetails.value
   if (!details) return []
@@ -91,8 +100,8 @@ const integrityCriticalIssues = computed(() => {
 
   if (summary.lastError) {
     issues.push({
-      title: summary.hasHashMismatch ? 'Manifest Hash Mismatch' : 'Verification Failure',
-      message: summary.lastError,
+      title: summary.errorCategory || (summary.hasHashMismatch ? 'Manifest Hash Mismatch' : 'Verification Failure'),
+      message: summary.lastErrorSummary || summary.lastError,
       icon: summary.hasHashMismatch ? 'mdi-file-document-alert' : 'mdi-alert-octagon',
     })
   }
@@ -267,132 +276,10 @@ function submitDeclaration() {
 
 <template>
   <div>
-    <h1 class="text-h5 font-weight-medium mb-4 text-primary">ZTA Application Builder</h1>
+    <h1 class="text-h5 font-weight-medium mb-2 text-primary">ZTA Resource Observatory</h1>
+    <p class="text-body-2 text-secondary mb-4">Monitorizare, alertare și investigație pentru resursele ZeroTrustApplication. Builder-ul este disponibil mai jos, on-demand.</p>
     <v-row>
-      <v-col cols="12" lg="7">
-        <v-card class="gc-border" style="border: 1px solid rgba(var(--v-theme-on-surface), 0.12)" flat>
-          <v-card-text class="pa-0">
-        <v-stepper v-model="step" elevation="0" bg-color="surface" hide-actions>
-          <v-stepper-header class="gc-border-bottom">
-            <v-stepper-item :value="1" title="Core & Supply Chain" :complete="step > 1" value-icon="mdi-check" color="primary"></v-stepper-item>
-            <v-divider></v-divider>
-            <v-stepper-item :value="2" title="Network & WAF" :complete="step > 2" value-icon="mdi-check" color="primary"></v-stepper-item>
-            <v-divider></v-divider>
-            <v-stepper-item :value="3" title="Runtime Guardrails" :complete="step > 3" value-icon="mdi-check" color="primary"></v-stepper-item>
-            <v-divider></v-divider>
-            <v-stepper-item :value="4" title="Review & Commit" color="primary"></v-stepper-item>
-          </v-stepper-header>
-
-          <v-stepper-window>
-            <v-stepper-window-item :value="1">
-              <div class="pa-4">
-                <h3 class="text-subtitle-1 font-weight-medium mb-4">Application Fundamentals</h3>
-                <v-row>
-                  <v-col cols="12" md="6">
-                    <v-text-field v-model="form.name" label="App Name" variant="outlined" density="compact"></v-text-field>
-                  </v-col>
-                  <v-col cols="12" md="6">
-                    <v-text-field v-model="form.namespace" label="Target Namespace" variant="outlined" density="compact"></v-text-field>
-                  </v-col>
-                  <v-col cols="12" md="6">
-                    <v-text-field v-model="form.securityPolicyName" label="Security Policy Name" variant="outlined" density="compact" hint="SupplyChainAttestation reference" persistent-hint></v-text-field>
-                  </v-col>
-                  <v-col cols="12">
-                    <v-text-field 
-                      v-model="form.image" 
-                      label="Container Image" 
-                      variant="outlined" 
-                      density="compact"
-                      hint="Must be hosted on GHCR and signed with Cosign"
-                      persistent-hint
-                      :error-messages="imageError ? [imageError] : []"
-                    >
-                      <template v-slot:prepend-inner>
-                        <v-icon :color="imageError ? 'error' : 'default'">mdi-docker</v-icon>
-                      </template>
-                    </v-text-field>
-                    <v-alert v-if="imageError" type="error" variant="tonal" density="compact" class="mt-2 text-caption">
-                      Politica Zero-Trust (Kyverno) va bloca acest deployment! Asigurați-vă că respectați regulile lanțului de aprovizionare.
-                    </v-alert>
-                  </v-col>
-                </v-row>
-                <div class="d-flex mt-6">
-                  <v-spacer></v-spacer>
-                  <v-btn color="primary" @click="step = 2" :disabled="!isStep1Valid" variant="flat">Continue to Network</v-btn>
-                </div>
-              </div>
-            </v-stepper-window-item>
-
-            <v-stepper-window-item :value="2">
-              <div class="pa-4">
-                <h3 class="text-subtitle-1 font-weight-medium mb-4">Microsegmentation & Coraza WAF</h3>
-                <v-row>
-                  <v-col cols="12" md="6">
-                    <v-text-field v-model="form.ingressNamespace" label="Allow Ingress From" variant="outlined" density="compact"></v-text-field>
-                  </v-col>
-                  <v-col cols="12" md="6">
-                    <v-text-field v-model="form.egressNamespace" label="Allow Egress To" variant="outlined" density="compact"></v-text-field>
-                  </v-col>
-                  <v-col cols="12" md="6">
-                    <v-text-field v-model="form.egressPorts" label="Allowed Egress Ports" variant="outlined" density="compact"></v-text-field>
-                  </v-col>
-                  <v-col cols="12">
-                    <v-row>
-                      <v-col cols="12" md="6">
-                        <v-select v-model="form.wafMode" :items="['Monitor', 'Block']" label="WAF Mode" variant="outlined" density="compact"></v-select>
-                      </v-col>
-                      <v-col cols="12" md="6">
-                        <v-select v-model="form.wafProfile" :items="wafProfiles" label="Coraza WAF Profile" variant="outlined" density="compact"></v-select>
-                      </v-col>
-                    </v-row>
-                  </v-col>
-                </v-row>
-                <div class="d-flex mt-6">
-                  <v-btn variant="text" @click="step = 1">Back</v-btn>
-                  <v-spacer></v-spacer>
-                  <v-btn color="primary" @click="step = 3" variant="flat">Continue to Runtime</v-btn>
-                </div>
-              </div>
-            </v-stepper-window-item>
-
-            <v-stepper-window-item :value="3">
-              <div class="pa-4">
-                 <h3 class="text-subtitle-1 font-weight-medium mb-4">Runtime Guardrails</h3>
-                 <p class="text-body-2 text-secondary mb-4">Definește căile permise și acțiunea operatorului când runtime-ul este compromis.</p>
-                 <v-text-field v-model="form.allowedPaths" label="Allowed Paths" variant="outlined" density="compact" placeholder="/tmp/app-data,/var/cache/app"></v-text-field>
-                 <v-select v-model="form.onCompromise" :items="['Isolate', 'Kill']" label="On Compromise Action" variant="outlined" density="compact" class="mt-4"></v-select>
-                 
-                 <div class="d-flex mt-6">
-                  <v-btn variant="text" @click="step = 2">Back</v-btn>
-                  <v-spacer></v-spacer>
-                  <v-btn color="primary" @click="step = 4" variant="flat">Review Declaration</v-btn>
-                </div>
-              </div>
-            </v-stepper-window-item>
-
-            <v-stepper-window-item :value="4">
-              <div class="pa-4">
-                 <h3 class="text-subtitle-1 font-weight-medium mb-4">Review & Propose via GitOps</h3>
-                 
-                 <div class="bg-surface-variant pa-4 rounded gc-border font-mono text-caption overflow-auto" style="max-height: 250px;">
-<pre>{{ yamlPreview }}</pre>
-                 </div>
-
-                 <div class="d-flex mt-6">
-                  <v-btn variant="text" @click="step = 3">Edit Specs</v-btn>
-                  <v-spacer></v-spacer>
-                  <v-btn color="success" @click="submitDeclaration" :loading="isSubmitting" variant="flat" prepend-icon="mdi-google-cloud">Deploy ZTA Application</v-btn>
-                </div>
-              </div>
-            </v-stepper-window-item>
-
-          </v-stepper-window>
-        </v-stepper>
-          </v-card-text>
-        </v-card>
-      </v-col>
-
-      <v-col cols="12" lg="5">
+      <v-col cols="12" lg="4">
         <v-card class="gc-border mb-4" style="border: 1px solid rgba(var(--v-theme-on-surface), 0.12)" flat>
           <v-card-title class="font-weight-medium pb-2 text-primary">Existing Applications</v-card-title>
           <v-card-text>
@@ -420,14 +307,16 @@ function submitDeclaration() {
                 <v-list-item-subtitle>
                   {{ app.summary.securityPolicyRef }} • {{ app.summary.securityState }}
                   <div v-if="app.summary.lastError" class="text-error font-weight-medium mt-1">
-                    {{ app.summary.lastError }}
+                    {{ app.summary.lastErrorSummary || app.summary.lastError }}
                   </div>
                 </v-list-item-subtitle>
               </v-list-item>
             </v-list>
           </v-card-text>
         </v-card>
+      </v-col>
 
+      <v-col cols="12" lg="8">
         <v-card class="gc-border" style="border: 1px solid rgba(var(--v-theme-on-surface), 0.12)" flat>
           <v-card-title class="font-weight-medium pb-2 text-primary d-flex align-center justify-space-between">
             <span>Integrity Ledger</span>
@@ -466,13 +355,145 @@ function submitDeclaration() {
                   <span>{{ item.title }}</span>
                   <v-chip :color="ledgerColor(item.status)" size="x-small" variant="tonal">{{ item.status }}</v-chip>
                 </v-list-item-title>
-                <v-list-item-subtitle>{{ typeof item.details === 'string' ? item.details : JSON.stringify(item.details) }}</v-list-item-subtitle>
+                <v-list-item-subtitle style="white-space: pre-wrap">{{ formatLedgerDetails(item.details) }}</v-list-item-subtitle>
               </v-list-item>
               </v-list>
             </template>
             <div v-else class="text-caption text-secondary">Selectează o aplicație pentru a vedea detaliile VBBI și policy gate-ul.</div>
           </v-card-text>
         </v-card>
+      </v-col>
+    </v-row>
+
+    <v-row class="mt-2">
+      <v-col cols="12">
+        <v-expansion-panels v-model="builderPanels" variant="accordion">
+          <v-expansion-panel>
+            <v-expansion-panel-title>
+              <div>
+                <div class="text-subtitle-1 font-weight-medium text-primary">ZTA Application Builder</div>
+                <div class="text-caption text-secondary">Deschide builder-ul doar când vrei să creezi sau modifici o declarație ZTA.</div>
+              </div>
+            </v-expansion-panel-title>
+            <v-expansion-panel-text>
+              <v-stepper v-model="step" elevation="0" bg-color="surface" hide-actions>
+                <v-stepper-header class="gc-border-bottom">
+                  <v-stepper-item :value="1" title="Core & Supply Chain" :complete="step > 1" value-icon="mdi-check" color="primary"></v-stepper-item>
+                  <v-divider></v-divider>
+                  <v-stepper-item :value="2" title="Network & WAF" :complete="step > 2" value-icon="mdi-check" color="primary"></v-stepper-item>
+                  <v-divider></v-divider>
+                  <v-stepper-item :value="3" title="Runtime Guardrails" :complete="step > 3" value-icon="mdi-check" color="primary"></v-stepper-item>
+                  <v-divider></v-divider>
+                  <v-stepper-item :value="4" title="Review & Commit" color="primary"></v-stepper-item>
+                </v-stepper-header>
+
+                <v-stepper-window>
+                  <v-stepper-window-item :value="1">
+                    <div class="pa-4">
+                      <h3 class="text-subtitle-1 font-weight-medium mb-4">Application Fundamentals</h3>
+                      <v-row>
+                        <v-col cols="12" md="6">
+                          <v-text-field v-model="form.name" label="App Name" variant="outlined" density="compact"></v-text-field>
+                        </v-col>
+                        <v-col cols="12" md="6">
+                          <v-text-field v-model="form.namespace" label="Target Namespace" variant="outlined" density="compact"></v-text-field>
+                        </v-col>
+                        <v-col cols="12" md="6">
+                          <v-text-field v-model="form.securityPolicyName" label="Security Policy Name" variant="outlined" density="compact" hint="SupplyChainAttestation reference" persistent-hint></v-text-field>
+                        </v-col>
+                        <v-col cols="12">
+                          <v-text-field
+                            v-model="form.image"
+                            label="Container Image"
+                            variant="outlined"
+                            density="compact"
+                            hint="Must be hosted on GHCR and signed with Cosign"
+                            persistent-hint
+                            :error-messages="imageError ? [imageError] : []"
+                          >
+                            <template v-slot:prepend-inner>
+                              <v-icon :color="imageError ? 'error' : 'default'">mdi-docker</v-icon>
+                            </template>
+                          </v-text-field>
+                          <v-alert v-if="imageError" type="error" variant="tonal" density="compact" class="mt-2 text-caption">
+                            Politica Zero-Trust (Kyverno) va bloca acest deployment! Asigurați-vă că respectați regulile lanțului de aprovizionare.
+                          </v-alert>
+                        </v-col>
+                      </v-row>
+                      <div class="d-flex mt-6">
+                        <v-spacer></v-spacer>
+                        <v-btn color="primary" @click="step = 2" :disabled="!isStep1Valid" variant="flat">Continue to Network</v-btn>
+                      </div>
+                    </div>
+                  </v-stepper-window-item>
+
+                  <v-stepper-window-item :value="2">
+                    <div class="pa-4">
+                      <h3 class="text-subtitle-1 font-weight-medium mb-4">Microsegmentation & Coraza WAF</h3>
+                      <v-row>
+                        <v-col cols="12" md="6">
+                          <v-text-field v-model="form.ingressNamespace" label="Allow Ingress From" variant="outlined" density="compact"></v-text-field>
+                        </v-col>
+                        <v-col cols="12" md="6">
+                          <v-text-field v-model="form.egressNamespace" label="Allow Egress To" variant="outlined" density="compact"></v-text-field>
+                        </v-col>
+                        <v-col cols="12" md="6">
+                          <v-text-field v-model="form.egressPorts" label="Allowed Egress Ports" variant="outlined" density="compact"></v-text-field>
+                        </v-col>
+                        <v-col cols="12">
+                          <v-row>
+                            <v-col cols="12" md="6">
+                              <v-select v-model="form.wafMode" :items="['Monitor', 'Block']" label="WAF Mode" variant="outlined" density="compact"></v-select>
+                            </v-col>
+                            <v-col cols="12" md="6">
+                              <v-select v-model="form.wafProfile" :items="wafProfiles" label="Coraza WAF Profile" variant="outlined" density="compact"></v-select>
+                            </v-col>
+                          </v-row>
+                        </v-col>
+                      </v-row>
+                      <div class="d-flex mt-6">
+                        <v-btn variant="text" @click="step = 1">Back</v-btn>
+                        <v-spacer></v-spacer>
+                        <v-btn color="primary" @click="step = 3" variant="flat">Continue to Runtime</v-btn>
+                      </div>
+                    </div>
+                  </v-stepper-window-item>
+
+                  <v-stepper-window-item :value="3">
+                    <div class="pa-4">
+                      <h3 class="text-subtitle-1 font-weight-medium mb-4">Runtime Guardrails</h3>
+                      <p class="text-body-2 text-secondary mb-4">Definește căile permise și acțiunea operatorului când runtime-ul este compromis.</p>
+                      <v-text-field v-model="form.allowedPaths" label="Allowed Paths" variant="outlined" density="compact" placeholder="/tmp/app-data,/var/cache/app"></v-text-field>
+                      <v-select v-model="form.onCompromise" :items="['Isolate', 'Kill']" label="On Compromise Action" variant="outlined" density="compact" class="mt-4"></v-select>
+
+                      <div class="d-flex mt-6">
+                        <v-btn variant="text" @click="step = 2">Back</v-btn>
+                        <v-spacer></v-spacer>
+                        <v-btn color="primary" @click="step = 4" variant="flat">Review Declaration</v-btn>
+                      </div>
+                    </div>
+                  </v-stepper-window-item>
+
+                  <v-stepper-window-item :value="4">
+                    <div class="pa-4">
+                      <h3 class="text-subtitle-1 font-weight-medium mb-4">Review & Propose via GitOps</h3>
+
+                      <div class="bg-surface-variant pa-4 rounded gc-border font-mono text-caption overflow-auto" style="max-height: 250px;">
+<pre>{{ yamlPreview }}</pre>
+                      </div>
+
+                      <div class="d-flex mt-6">
+                        <v-btn variant="text" @click="step = 3">Edit Specs</v-btn>
+                        <v-spacer></v-spacer>
+                        <v-btn color="success" @click="submitDeclaration" :loading="isSubmitting" variant="flat" prepend-icon="mdi-google-cloud">Deploy ZTA Application</v-btn>
+                      </div>
+                    </div>
+                  </v-stepper-window-item>
+                </v-stepper-window>
+              </v-stepper>
+            </v-expansion-panel-text>
+          </v-expansion-panel>
+        </v-expansion-panels>
       </v-col>
     </v-row>
 

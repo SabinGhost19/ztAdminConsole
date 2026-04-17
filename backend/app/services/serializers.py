@@ -1,6 +1,54 @@
 from __future__ import annotations
 
+import re
+
 from typing import Any
+
+
+def _unique_preserve_order(values: list[Any]) -> list[str]:
+    seen: set[str] = set()
+    unique: list[str] = []
+    for value in values:
+        normalized = str(value or "").strip()
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        unique.append(normalized)
+    return unique
+
+
+def _summarize_error_text(message: str) -> str:
+    text = str(message or "").strip()
+    if not text:
+        return ""
+
+    if "manifest spec hash mismatch against expected_infra_hash" in text:
+        return "Manifest hash mismatch against attested expected_infra_hash."
+
+    status_match = re.search(r"\((\d{3})\)", text)
+    reason_match = re.search(r"Reason:\s*([^\n]+)", text)
+    body_match = re.search(r"HTTP response body:\s*([^\n]+)", text)
+    if status_match and reason_match:
+        body = body_match.group(1).strip() if body_match else ""
+        summary = f"Kubernetes API error {status_match.group(1)} {reason_match.group(1).strip()}"
+        if body:
+          summary += f": {body}"
+        return summary
+
+    return text.splitlines()[0].strip()
+
+
+def _error_category(message: str) -> str:
+    text = str(message or "").strip()
+    if not text:
+        return ""
+    if "manifest spec hash mismatch" in text:
+        return "Manifest Mismatch"
+    if "VulnerabilityPolicy" in text or "trivy" in text.lower():
+        return "Compliance Failure"
+    if "Reason: Not Found" in text or "404" in text:
+        return "Provisioning Error"
+    return "Verification Failure"
 
 
 def _metadata(item: dict[str, Any]) -> dict[str, Any]:
@@ -40,9 +88,10 @@ def serialize_zta_resource(item: dict[str, Any]) -> dict[str, Any]:
     spec = item.get("spec", {}) or {}
     status = item.get("status", {}) or {}
     policy_ref = (spec.get("securityPolicyRef", {}) or {}).get("name")
-    active_violations = status.get("activeViolations", []) or []
+    active_violations = _unique_preserve_order(status.get("activeViolations", []) or [])
     provenance = status.get("provenance", {}) or {}
     last_error = str(status.get("lastError", "") or "").strip()
+    last_error_summary = _summarize_error_text(last_error)
     expected_infra_hash = str((((status.get("attestations", {}) or {}).get("expectedInfraHash", "")) or "")).strip()
     computed_infra_hash = str((((status.get("attestations", {}) or {}).get("computedInfraHash", "")) or "")).strip()
     has_hash_mismatch = bool(
@@ -65,6 +114,8 @@ def serialize_zta_resource(item: dict[str, Any]) -> dict[str, Any]:
             "violations": active_violations,
             "hasViolations": bool(active_violations),
             "lastError": last_error,
+            "lastErrorSummary": last_error_summary,
+            "errorCategory": _error_category(last_error),
             "hasErrors": bool(last_error),
             "expectedInfraHash": expected_infra_hash,
             "computedInfraHash": computed_infra_hash,

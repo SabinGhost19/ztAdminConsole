@@ -18,6 +18,28 @@ TALON_CONFIGMAP_KEY = os.getenv("TALON_CONFIGMAP_KEY", "rules.yaml")
 logger = logging.getLogger("zero_trust_integrity_service")
 
 
+def _unique_preserve_order(values: list[Any]) -> list[str]:
+    seen: set[str] = set()
+    unique: list[str] = []
+    for value in values:
+        normalized = str(value or "").strip()
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        unique.append(normalized)
+    return unique
+
+
+def _aggregate_messages(values: list[Any]) -> list[dict[str, Any]]:
+    ordered_counts: dict[str, int] = {}
+    for value in values:
+        normalized = str(value or "").strip()
+        if not normalized:
+            continue
+        ordered_counts[normalized] = ordered_counts.get(normalized, 0) + 1
+    return [{"message": message, "count": count} for message, count in ordered_counts.items()]
+
+
 def _build_integrity_ledger(application: dict[str, Any], policy: dict[str, Any] | None) -> list[dict[str, Any]]:
     status = application.get("status", {}) or {}
     summary = application.get("summary", {}) or {}
@@ -26,6 +48,7 @@ def _build_integrity_ledger(application: dict[str, Any], policy: dict[str, Any] 
     merkle = provenance.get("merkle", {}) or {}
     voucher_required = bool(((policy or {}).get("summary", {}) or {}).get("requireVoucher", False))
     has_verified_at = bool(provenance.get("verifiedAt"))
+    summarized_error = summary.get("lastErrorSummary") or summary.get("lastError")
     ledger = [
         {
             "id": "voucher",
@@ -56,8 +79,8 @@ def _build_integrity_ledger(application: dict[str, Any], policy: dict[str, Any] 
             "details": {
                 "trustLevel": summary.get("trustLevel"),
                 "securityState": summary.get("securityState"),
-                "violations": summary.get("violations", []),
-                "lastError": summary.get("lastError"),
+                "violations": _aggregate_messages(summary.get("violations", [])),
+                "lastError": summarized_error,
             },
         },
     ]
@@ -83,9 +106,9 @@ def _build_integrity_ledger(application: dict[str, Any], policy: dict[str, Any] 
             0,
             {
                 "id": "operator-error",
-                "title": "Verification Failure",
+                "title": summary.get("errorCategory") or "Verification Failure",
                 "status": "error",
-                "details": summary.get("lastError"),
+                "details": summarized_error,
             },
         )
 
@@ -173,21 +196,31 @@ def _build_sanction_history(application: dict[str, Any], policy: dict[str, Any] 
             "timestamp": summary.get("provenanceVerifiedAt"),
             "message": "Provenance-Enforcer marked the workload as verified.",
         })
-    for violation in status.get("activeViolations", []) or []:
+    for entry in _aggregate_messages(status.get("activeViolations", []) or []):
+        message = entry["message"]
+        count = int(entry["count"])
         history.append({
             "kind": "violation",
             "action": runtime.get("onPolicyDrift", "Alert"),
             "timestamp": status.get("lastVerified") or application.get("metadata", {}).get("createdAt"),
-            "message": str(violation),
+            "message": f"{message} (x{count})" if count > 1 else message,
         })
     if status.get("securityState") and status.get("securityState") not in {"Compliant", "PendingProvenance"}:
         history.append({
             "kind": "security-state",
             "action": status.get("securityState"),
             "timestamp": status.get("lastVerified") or application.get("metadata", {}).get("createdAt"),
-            "message": status.get("lastError") or "Security state changed due to operator enforcement.",
+            "message": summary.get("lastErrorSummary") or status.get("lastError") or "Security state changed due to operator enforcement.",
         })
-    return history
+    deduped_history: list[dict[str, Any]] = []
+    seen: set[tuple[str, str, str]] = set()
+    for item in history:
+        key = (str(item.get("kind", "")), str(item.get("action", "")), str(item.get("message", "")))
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped_history.append(item)
+    return deduped_history
 
 
 async def _build_runtime_forensics(application: dict[str, Any]) -> dict[str, Any]:
