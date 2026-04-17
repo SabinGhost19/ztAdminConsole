@@ -40,6 +40,82 @@ const applicationOptions = computed(() => dashboardStore.applicationOptions)
 const isLoadingApplications = computed(() => dashboardStore.loadingApplications)
 const isLoadingIntegrity = computed(() => dashboardStore.loadingIntegrity)
 
+function applicationSeverity(app: any) {
+  const summary = app?.summary || {}
+  if (summary.hasErrors || summary.hasHashMismatch) return 'error'
+  if (summary.hasViolations || !['Compliant', 'PendingProvenance'].includes(summary.securityState || '')) return 'error'
+  if (summary.trustLevel === 'Verified') return 'success'
+  return 'warning'
+}
+
+function applicationIcon(app: any) {
+  const summary = app?.summary || {}
+  if (summary.hasHashMismatch) return 'mdi-file-document-alert'
+  if (summary.hasErrors) return 'mdi-alert-octagon'
+  if (summary.hasViolations || !['Compliant', 'PendingProvenance'].includes(summary.securityState || '')) return 'mdi-shield-alert'
+  if (summary.trustLevel === 'Verified') return 'mdi-shield-check'
+  return 'mdi-progress-clock'
+}
+
+function applicationBadge(app: any) {
+  const summary = app?.summary || {}
+  if (summary.hasHashMismatch) return 'Manifest Mismatch'
+  if (summary.hasErrors) return 'Verification Failed'
+  if (summary.hasViolations) return 'Compliance Failed'
+  if (summary.trustLevel === 'Verified') return 'Verified'
+  return 'Pending'
+}
+
+function ledgerColor(status: string) {
+  if (status === 'error' || status === 'blocked') return 'error'
+  if (status === 'verified') return 'success'
+  return 'warning'
+}
+
+function ledgerIcon(status: string, itemId: string) {
+  if (itemId === 'manifest-hash' && status !== 'verified') return 'mdi-file-document-alert'
+  if (itemId === 'operator-error') return 'mdi-alert-octagon'
+  if (status === 'error') return 'mdi-alert-circle'
+  if (status === 'blocked') return 'mdi-close-circle'
+  if (status === 'verified') return 'mdi-check-circle'
+  return 'mdi-progress-clock'
+}
+
+const integrityCriticalIssues = computed(() => {
+  const details = integrityDetails.value
+  if (!details) return []
+
+  const application = details.application || {}
+  const summary = application.summary || {}
+  const issues = []
+
+  if (summary.lastError) {
+    issues.push({
+      title: summary.hasHashMismatch ? 'Manifest Hash Mismatch' : 'Verification Failure',
+      message: summary.lastError,
+      icon: summary.hasHashMismatch ? 'mdi-file-document-alert' : 'mdi-alert-octagon',
+    })
+  }
+
+  if (summary.hasHashMismatch) {
+    issues.push({
+      title: 'Expected Hash Does Not Match Applied Spec',
+      message: `expected=${summary.expectedInfraHash || 'n/a'} computed=${summary.computedInfraHash || 'n/a'}`,
+      icon: 'mdi-compare-remove',
+    })
+  }
+
+  for (const violation of summary.violations || []) {
+    issues.push({
+      title: 'Compliance Violation',
+      message: String(violation),
+      icon: 'mdi-shield-alert',
+    })
+  }
+
+  return issues
+})
+
 const imageError = computed(() => {
   if (!form.value.image) return ''
   if (!form.value.image.startsWith('ghcr.io/')) return 'Violation: Imaginea trebuie să fie din ghcr.io/'
@@ -333,12 +409,20 @@ function submitDeclaration() {
             <v-list lines="two">
               <v-list-item v-for="app in applications" :key="app.metadata.uid || app.metadata.name">
                 <template v-slot:prepend>
-                  <v-avatar :color="app.summary.trustLevel === 'Verified' ? 'success' : 'warning'" size="28">
-                    <v-icon size="16">mdi-cube-outline</v-icon>
+                  <v-avatar :color="applicationSeverity(app)" size="28">
+                    <v-icon size="16">{{ applicationIcon(app) }}</v-icon>
                   </v-avatar>
                 </template>
-                <v-list-item-title>{{ app.metadata.name }}</v-list-item-title>
-                <v-list-item-subtitle>{{ app.summary.securityPolicyRef }} • {{ app.summary.securityState }}</v-list-item-subtitle>
+                <v-list-item-title class="d-flex align-center ga-2 flex-wrap">
+                  <span>{{ app.metadata.name }}</span>
+                  <v-chip :color="applicationSeverity(app)" size="x-small" variant="tonal">{{ applicationBadge(app) }}</v-chip>
+                </v-list-item-title>
+                <v-list-item-subtitle>
+                  {{ app.summary.securityPolicyRef }} • {{ app.summary.securityState }}
+                  <div v-if="app.summary.lastError" class="text-error font-weight-medium mt-1">
+                    {{ app.summary.lastError }}
+                  </div>
+                </v-list-item-subtitle>
               </v-list-item>
             </v-list>
           </v-card-text>
@@ -353,17 +437,39 @@ function submitDeclaration() {
           </v-card-title>
           <v-card-text>
             <div v-if="isLoadingIntegrity" class="text-caption text-secondary">Loading integrity details...</div>
-            <v-list v-else-if="integrityDetails" lines="two">
+            <template v-else-if="integrityDetails">
+              <v-alert
+                v-for="(issue, index) in integrityCriticalIssues"
+                :key="`${issue.title}-${index}`"
+                type="error"
+                variant="tonal"
+                density="compact"
+                class="mb-3"
+              >
+                <div class="d-flex align-start ga-2">
+                  <v-icon color="error">{{ issue.icon }}</v-icon>
+                  <div>
+                    <div class="font-weight-bold">{{ issue.title }}</div>
+                    <div class="text-caption">{{ issue.message }}</div>
+                  </div>
+                </div>
+              </v-alert>
+
+              <v-list lines="two">
               <v-list-item v-for="item in integrityDetails.integrityLedger || []" :key="item.id">
                 <template v-slot:prepend>
-                  <v-avatar :color="item.status === 'verified' ? 'success' : (item.status === 'blocked' ? 'error' : 'warning')" size="28">
-                    <v-icon size="16">mdi-shield-check</v-icon>
+                  <v-avatar :color="ledgerColor(item.status)" size="28">
+                    <v-icon size="16">{{ ledgerIcon(item.status, item.id) }}</v-icon>
                   </v-avatar>
                 </template>
-                <v-list-item-title>{{ item.title }}</v-list-item-title>
+                <v-list-item-title class="d-flex align-center ga-2 flex-wrap">
+                  <span>{{ item.title }}</span>
+                  <v-chip :color="ledgerColor(item.status)" size="x-small" variant="tonal">{{ item.status }}</v-chip>
+                </v-list-item-title>
                 <v-list-item-subtitle>{{ typeof item.details === 'string' ? item.details : JSON.stringify(item.details) }}</v-list-item-subtitle>
               </v-list-item>
-            </v-list>
+              </v-list>
+            </template>
             <div v-else class="text-caption text-secondary">Selectează o aplicație pentru a vedea detaliile VBBI și policy gate-ul.</div>
           </v-card-text>
         </v-card>

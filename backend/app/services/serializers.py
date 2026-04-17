@@ -42,6 +42,14 @@ def serialize_zta_resource(item: dict[str, Any]) -> dict[str, Any]:
     policy_ref = (spec.get("securityPolicyRef", {}) or {}).get("name")
     active_violations = status.get("activeViolations", []) or []
     provenance = status.get("provenance", {}) or {}
+    last_error = str(status.get("lastError", "") or "").strip()
+    expected_infra_hash = str((((status.get("attestations", {}) or {}).get("expectedInfraHash", "")) or "")).strip()
+    computed_infra_hash = str((((status.get("attestations", {}) or {}).get("computedInfraHash", "")) or "")).strip()
+    has_hash_mismatch = bool(
+        expected_infra_hash
+        and computed_infra_hash
+        and expected_infra_hash.lower().removeprefix("sha256:") != computed_infra_hash.lower().removeprefix("sha256:")
+    )
     return {
         "metadata": _metadata(item),
         "spec": spec,
@@ -56,6 +64,11 @@ def serialize_zta_resource(item: dict[str, Any]) -> dict[str, Any]:
             "lastVerified": status.get("lastVerified"),
             "violations": active_violations,
             "hasViolations": bool(active_violations),
+            "lastError": last_error,
+            "hasErrors": bool(last_error),
+            "expectedInfraHash": expected_infra_hash,
+            "computedInfraHash": computed_infra_hash,
+            "hasHashMismatch": has_hash_mismatch,
             "provenanceVerifiedAt": provenance.get("verifiedAt"),
             "provenanceRequired": provenance.get("required", False),
         },

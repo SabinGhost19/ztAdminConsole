@@ -26,8 +26,7 @@ def _build_integrity_ledger(application: dict[str, Any], policy: dict[str, Any] 
     merkle = provenance.get("merkle", {}) or {}
     voucher_required = bool(((policy or {}).get("summary", {}) or {}).get("requireVoucher", False))
     has_verified_at = bool(provenance.get("verifiedAt"))
-
-    return [
+    ledger = [
         {
             "id": "voucher",
             "title": "Voucher Presence",
@@ -53,14 +52,44 @@ def _build_integrity_ledger(application: dict[str, Any], policy: dict[str, Any] 
         {
             "id": "policy-gate",
             "title": "Policy Gate",
-            "status": "verified" if summary.get("trustLevel") == "Verified" else "blocked",
+            "status": "error" if summary.get("lastError") else ("verified" if summary.get("trustLevel") == "Verified" else "blocked"),
             "details": {
                 "trustLevel": summary.get("trustLevel"),
                 "securityState": summary.get("securityState"),
                 "violations": summary.get("violations", []),
+                "lastError": summary.get("lastError"),
             },
         },
     ]
+
+    expected_hash = str(summary.get("expectedInfraHash", "") or "").strip()
+    computed_hash = str(summary.get("computedInfraHash", "") or "").strip()
+    if expected_hash or computed_hash:
+        ledger.append(
+            {
+                "id": "manifest-hash",
+                "title": "Manifest Hash",
+                "status": "error" if summary.get("hasHashMismatch") else "verified",
+                "details": {
+                    "expected": expected_hash,
+                    "computed": computed_hash,
+                    "mismatch": bool(summary.get("hasHashMismatch")),
+                },
+            }
+        )
+
+    if summary.get("lastError"):
+        ledger.insert(
+            0,
+            {
+                "id": "operator-error",
+                "title": "Verification Failure",
+                "status": "error",
+                "details": summary.get("lastError"),
+            },
+        )
+
+    return ledger
 
 
 def _build_trust_cascade(application: dict[str, Any], policy: dict[str, Any] | None, secrets: list[dict[str, Any]]) -> dict[str, Any]:
