@@ -1,3 +1,10 @@
+## [1.1.5](https://github.com/SabinGhost19/ztAdminConsole/compare/v1.1.4...v1.1.5) (2026-04-17)
+
+
+### Bug Fixes
+
+* **zta:** duplicated tracing logs ([efd66a8](https://github.com/SabinGhost19/ztAdminConsole/commit/efd66a810b7c7097864522030059ffe28d74e83d))
+
 ## [1.1.4](https://github.com/SabinGhost19/ztAdminConsole/compare/v1.1.3...v1.1.4) (2026-04-17)
 
 
