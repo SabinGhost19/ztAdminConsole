@@ -1,3 +1,10 @@
+## [1.1.4](https://github.com/SabinGhost19/ztAdminConsole/compare/v1.1.3...v1.1.4) (2026-04-17)
+
+
+### Bug Fixes
+
+* **zta:** anifest spec hash mismatch ([525f4d2](https://github.com/SabinGhost19/ztAdminConsole/commit/525f4d2dec2028bf8216a954252d6f72d3f6b236))
+
 ## [1.1.3](https://github.com/SabinGhost19/ztAdminConsole/compare/v1.1.2...v1.1.3) (2026-04-16)
 
 
