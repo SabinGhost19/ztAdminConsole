@@ -8,7 +8,6 @@ import ProvisioningPlan from '../components/ProvisioningPlan.vue'
 import ReconcileFlow from '../components/ReconcileFlow.vue'
 import SbomTree from '../components/SbomTree.vue'
 import TrustCascadeView from '../components/TrustCascadeView.vue'
-import VulnerabilityHeatmap from '../components/VulnerabilityHeatmap.vue'
 import { useNotificationStore } from '../store/notification'
 import { useDashboardStore } from '../store/dashboard'
 
@@ -17,6 +16,7 @@ const dashboardStore = useDashboardStore()
 
 const step = ref(1)
 const builderPanels = ref<number[]>([])
+const integrityPanels = ref<number[]>([])
 const isSubmitting = ref(false)
 const selectedApplication = ref('')
 const integrityDetails = ref<any | null>(null)
@@ -419,37 +419,40 @@ function submitDeclaration() {
 
               <v-row>
                 <v-col cols="12" v-for="item in integrityDetails.integrityLedger || []" :key="item.id">
-                  <v-card class="gc-border" flat style="border: 1px solid rgba(var(--v-theme-on-surface), 0.08)">
-                    <v-card-text>
-                      <div class="d-flex align-center justify-space-between mb-2 ga-2 flex-wrap">
-                        <div class="d-flex align-center ga-2">
-                          <v-avatar :color="ledgerColor(item.status)" size="28">
-                            <v-icon size="16">{{ ledgerIcon(item.status, item.id) }}</v-icon>
-                          </v-avatar>
-                          <div class="text-body-2 font-weight-medium">{{ item.title }}</div>
-                        </div>
-                        <v-chip :color="ledgerColor(item.status)" size="x-small" variant="tonal">{{ item.status }}</v-chip>
-                      </div>
-
-                      <v-row v-if="ledgerDetailsEntries(item.details).length">
-                        <v-col cols="12" md="6" v-for="entry in ledgerDetailsEntries(item.details)" :key="`${item.id}-${entry.key}`">
-                          <div class="text-caption text-secondary mb-1">{{ entry.key }}</div>
+                  <v-expansion-panels v-model="integrityPanels" variant="accordion" class="gc-border" style="border: 1px solid rgba(var(--v-theme-on-surface), 0.08)">
+                    <v-expansion-panel>
+                      <v-expansion-panel-title>
+                        <div class="d-flex align-center justify-space-between w-100 ga-2 flex-wrap">
                           <div class="d-flex align-center ga-2">
-                            <div class="text-body-2 text-medium-emphasis flex-grow-1" style="word-break: break-all;">{{ entry.value || 'n/a' }}</div>
-                            <v-btn
-                              v-if="entry.value"
-                              icon="mdi-content-copy"
-                              size="x-small"
-                              variant="text"
-                              color="primary"
-                              @click="copyToClipboard(entry.value)"
-                            ></v-btn>
+                            <v-avatar :color="ledgerColor(item.status)" size="28">
+                              <v-icon size="16">{{ ledgerIcon(item.status, item.id) }}</v-icon>
+                            </v-avatar>
+                            <div class="text-body-2 font-weight-medium">{{ item.title }}</div>
                           </div>
-                        </v-col>
-                      </v-row>
-                      <div v-else class="text-caption text-secondary">No details exposed for this stage.</div>
-                    </v-card-text>
-                  </v-card>
+                          <v-chip :color="ledgerColor(item.status)" size="x-small" variant="tonal">{{ item.status }}</v-chip>
+                        </div>
+                      </v-expansion-panel-title>
+                      <v-expansion-panel-text>
+                        <v-row v-if="ledgerDetailsEntries(item.details).length">
+                          <v-col cols="12" md="6" v-for="entry in ledgerDetailsEntries(item.details)" :key="`${item.id}-${entry.key}`">
+                            <div class="text-caption text-secondary mb-1">{{ entry.key }}</div>
+                            <div class="d-flex align-center ga-2">
+                              <div class="text-body-2 text-medium-emphasis flex-grow-1" style="word-break: break-all;">{{ entry.value || 'n/a' }}</div>
+                              <v-btn
+                                v-if="entry.value"
+                                icon="mdi-content-copy"
+                                size="x-small"
+                                variant="text"
+                                color="primary"
+                                @click="copyToClipboard(entry.value)"
+                              ></v-btn>
+                            </div>
+                          </v-col>
+                        </v-row>
+                        <div v-else class="text-caption text-secondary">No details exposed for this stage.</div>
+                      </v-expansion-panel-text>
+                    </v-expansion-panel>
+                  </v-expansion-panels>
                 </v-col>
               </v-row>
             </template>
@@ -609,9 +612,6 @@ function submitDeclaration() {
       </v-col>
       <v-col cols="12" lg="6">
         <SbomTree :groups="integrityDetails.sbomTree || []" />
-      </v-col>
-      <v-col cols="12" lg="6">
-        <VulnerabilityHeatmap :heatmap="integrityDetails.vulnerabilityHeatmap" />
       </v-col>
       <v-col cols="12" md="6">
         <v-card class="gc-border" flat>

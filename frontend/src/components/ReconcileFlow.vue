@@ -7,16 +7,16 @@ function stageColor(status?: string) {
   if (status === 'success') return 'success'
   if (status === 'failed') return 'error'
   if (status === 'warning') return 'warning'
-  if (status === 'running') return 'warning'
+  if (status === 'running') return 'info'
   if (status === 'skipped') return 'secondary'
   return 'default'
 }
 
 function stageIcon(status?: string) {
-  if (status === 'success') return 'mdi-check-circle'
+  if (status === 'success') return 'mdi-check-bold'
   if (status === 'failed') return 'mdi-close-circle'
   if (status === 'warning') return 'mdi-alert-circle'
-  if (status === 'running') return 'mdi-progress-clock'
+  if (status === 'running') return 'mdi-loading'
   if (status === 'skipped') return 'mdi-skip-next-circle'
   return 'mdi-circle-outline'
 }
@@ -37,7 +37,7 @@ function stageIcon(status?: string) {
 
     <div v-else class="flow-list">
       <div
-        v-for="stage in flow.stages"
+        v-for="(stage, index) in flow.stages"
         :key="stage.id"
         class="flow-step"
         :class="{
@@ -47,7 +47,8 @@ function stageIcon(status?: string) {
           'is-warning': stage.status === 'warning'
         }"
       >
-        <div class="d-flex align-start ga-3">
+        <div class="flow-connector" v-if="Number(index) < flow.stages.length - 1"></div>
+        <div class="d-flex align-start ga-3 position-relative">
           <div class="status-pill" :class="`tone-${stageColor(stage.status)}`">
             <v-icon size="16" :class="{ spin: stage.status === 'running' }">{{ stageIcon(stage.status) }}</v-icon>
           </div>
@@ -74,19 +75,20 @@ function stageIcon(status?: string) {
 
 .flow-list {
   display: grid;
-  gap: 10px;
+  gap: 14px;
 }
 
 .flow-step {
-  border: 1px solid rgba(var(--v-theme-on-surface), 0.08);
-  border-radius: 12px;
-  padding: 12px;
+  border: 1px solid rgba(var(--v-theme-on-surface), 0.1);
+  border-radius: 14px;
+  padding: 14px;
   background: rgba(var(--v-theme-surface), 1);
   transition: transform 0.25s ease, box-shadow 0.25s ease;
+  position: relative;
 }
 
 .flow-step.is-running {
-  box-shadow: 0 0 0 1px rgba(var(--v-theme-warning), 0.35), 0 8px 22px rgba(0, 0, 0, 0.08);
+  box-shadow: 0 0 0 1px rgba(var(--v-theme-info), 0.35), 0 8px 22px rgba(0, 0, 0, 0.08);
   transform: translateY(-1px);
 }
 
@@ -102,34 +104,54 @@ function stageIcon(status?: string) {
   box-shadow: inset 0 0 0 1px rgba(var(--v-theme-warning), 0.35);
 }
 
+.flow-connector {
+  position: absolute;
+  left: 37px;
+  top: 50px;
+  bottom: -17px;
+  width: 2px;
+  background: linear-gradient(to bottom, rgba(var(--v-theme-primary), 0.42), rgba(var(--v-theme-on-surface), 0.12));
+}
+
 .status-pill {
-  width: 30px;
-  height: 30px;
+  width: 46px;
+  height: 46px;
   border-radius: 999px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  border: 2px solid transparent;
 }
 
 .tone-success {
-  background: rgba(var(--v-theme-success), 0.15);
+  background: rgba(var(--v-theme-success), 0.2);
   color: rgb(var(--v-theme-success));
+  border-color: rgba(var(--v-theme-success), 0.6);
 }
 
 .tone-error {
-  background: rgba(var(--v-theme-error), 0.15);
+  background: rgba(var(--v-theme-error), 0.2);
   color: rgb(var(--v-theme-error));
+  border-color: rgba(var(--v-theme-error), 0.6);
 }
 
 .tone-warning {
-  background: rgba(var(--v-theme-warning), 0.15);
+  background: rgba(var(--v-theme-warning), 0.2);
   color: rgb(var(--v-theme-warning));
+  border-color: rgba(var(--v-theme-warning), 0.6);
+}
+
+.tone-info {
+  background: rgba(var(--v-theme-info), 0.2);
+  color: rgb(var(--v-theme-info));
+  border-color: rgba(var(--v-theme-info), 0.6);
 }
 
 .tone-secondary,
 .tone-default {
-  background: rgba(var(--v-theme-on-surface), 0.08);
+  background: rgba(var(--v-theme-on-surface), 0.1);
   color: rgba(var(--v-theme-on-surface), 0.8);
+  border-color: rgba(var(--v-theme-on-surface), 0.2);
 }
 
 .spin {
