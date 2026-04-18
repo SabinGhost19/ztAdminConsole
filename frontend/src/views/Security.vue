@@ -15,6 +15,18 @@ const applicationOptions = computed(() => dashboardStore.applicationOptions)
 
 const currentDrift = computed(() => driftedApps.value[selectedAppIndex.value])
 
+function sanctionDotColor(event: any) {
+  const severity = String(event?.severity || '').toLowerCase()
+  if (severity === 'success') return 'success'
+  if (severity === 'warning') return 'warning'
+  if (severity === 'error') return 'error'
+
+  const action = String(event?.action || '').toLowerCase()
+  if (action.includes('verified')) return 'success'
+  if (action.includes('alert') || action.includes('kill') || action.includes('isolate') || action.includes('blocked') || action.includes('noncompliant')) return 'error'
+  return 'warning'
+}
+
 async function fetchDriftStatus() {
   await dashboardStore.fetchDrift(true)
 }
@@ -120,8 +132,8 @@ function copyPatch() {
             <div v-if="integrityDetails" class="text-body-2">
               <div class="mb-2">Falco CM: {{ integrityDetails.runtimeForensics?.localFalcoRuleConfigMap }}</div>
               <div class="mb-2">Talon rule: {{ integrityDetails.runtimeForensics?.talonRuleReference }}</div>
-              <v-chip :color="integrityDetails.runtimeForensics?.localRulePresent ? 'success' : 'warning'" size="small" variant="tonal" class="mr-2">Falco {{ integrityDetails.runtimeForensics?.localRulePresent ? 'present' : 'missing' }}</v-chip>
-              <v-chip :color="integrityDetails.runtimeForensics?.talonRulePresent ? 'success' : 'warning'" size="small" variant="tonal">Talon {{ integrityDetails.runtimeForensics?.talonRulePresent ? 'patched' : 'missing' }}</v-chip>
+              <v-chip :color="integrityDetails.runtimeForensics?.localRulePresent ? 'success' : 'error'" size="small" variant="tonal" class="mr-2">Falco {{ integrityDetails.runtimeForensics?.localRulePresent ? 'present' : 'missing' }}</v-chip>
+              <v-chip :color="integrityDetails.runtimeForensics?.talonRulePresent ? 'success' : 'error'" size="small" variant="tonal">Talon {{ integrityDetails.runtimeForensics?.talonRulePresent ? 'patched' : 'missing' }}</v-chip>
             </div>
             <div v-else class="text-caption text-secondary">Selectează o aplicație pentru runtime-level enforcement evidence.</div>
           </v-card-text>
@@ -132,7 +144,7 @@ function copyPatch() {
           <v-card-title class="text-primary">Sanction History</v-card-title>
           <v-card-text>
             <v-timeline density="compact" align="start" side="end">
-              <v-timeline-item v-for="(event, index) in (integrityDetails?.sanctionHistory || [])" :key="`${event.kind}-${index}`" size="small" dot-color="warning">
+              <v-timeline-item v-for="(event, index) in (integrityDetails?.sanctionHistory || [])" :key="`${event.kind}-${index}`" size="small" :dot-color="sanctionDotColor(event)">
                 <div class="text-body-2 font-weight-medium">{{ event.action }}</div>
                 <div class="text-caption text-secondary">{{ event.message }}</div>
                 <div class="text-caption mt-1">{{ event.timestamp || 'timestamp unavailable' }}</div>

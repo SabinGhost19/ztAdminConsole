@@ -1,9 +1,11 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import type { AxiosError, AxiosResponse } from 'axios'
 import { api } from '../api/axios'
 import BuildLedgerGraph from '../components/BuildLedgerGraph.vue'
 import MerkleTreeExplorer from '../components/MerkleTreeExplorer.vue'
+import ProvisioningPlan from '../components/ProvisioningPlan.vue'
+import ReconcileFlow from '../components/ReconcileFlow.vue'
 import SbomTree from '../components/SbomTree.vue'
 import TrustCascadeView from '../components/TrustCascadeView.vue'
 import VulnerabilityHeatmap from '../components/VulnerabilityHeatmap.vue'
@@ -19,6 +21,7 @@ const isSubmitting = ref(false)
 const selectedApplication = ref('')
 const integrityDetails = ref<any | null>(null)
 const isRevalidating = ref(false)
+const integrityPoller = ref<number | null>(null)
 
 const form = ref({
   name: '',
@@ -88,6 +91,70 @@ function formatLedgerDetails(details: unknown) {
     return JSON.stringify(details, null, 2)
   }
   return String(details ?? '')
+}
+
+function prettifyKey(key: string) {
+  return key
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .replace(/[_-]+/g, ' ')
+    .replace(/^./, (char) => char.toUpperCase())
+}
+
+function ledgerDetailsEntries(details: unknown) {
+  if (!details || typeof details !== 'object') {
+    const value = formatLedgerDetails(details)
+    return value ? [{ key: 'Details', value }] : []
+  }
+
+  return Object.entries(details as Record<string, unknown>).map(([key, value]) => {
+    if (Array.isArray(value)) {
+      return {
+        key: prettifyKey(key),
+        value: value
+          .map((item) => (typeof item === 'object' ? JSON.stringify(item) : String(item)))
+          .join(', '),
+      }
+    }
+    if (value && typeof value === 'object') {
+      return { key: prettifyKey(key), value: JSON.stringify(value) }
+    }
+    return { key: prettifyKey(key), value: String(value ?? '') }
+  })
+}
+
+async function copyToClipboard(value: string) {
+  if (!value) return
+  await navigator.clipboard.writeText(value)
+}
+
+function startIntegrityPolling() {
+  stopIntegrityPolling()
+  if (!selectedApplication.value) return
+  integrityPoller.value = window.setInterval(async () => {
+    const [namespace, name] = selectedApplication.value.split('/')
+    if (!namespace || !name) return
+    integrityDetails.value = await dashboardStore.fetchIntegrity(namespace, name, true)
+  }, 8000)
+}
+
+function stopIntegrityPolling() {
+  if (integrityPoller.value !== null) {
+    window.clearInterval(integrityPoller.value)
+    integrityPoller.value = null
+  }
+}
+
+function sanctionDotColor(event: any) {
+  const severity = String(event?.severity || '').toLowerCase()
+  if (severity === 'success') return 'success'
+  if (severity === 'warning') return 'warning'
+  if (severity === 'error') return 'error'
+
+  const action = String(event?.action || '').toLowerCase()
+  if (action.includes('verified')) return 'success'
+  if (action.includes('alert')) return 'error'
+  if (action.includes('kill') || action.includes('isolate') || action.includes('blocked') || action.includes('noncompliant')) return 'error'
+  return 'warning'
 }
 
 const integrityCriticalIssues = computed(() => {
@@ -176,14 +243,20 @@ onMounted(() => {
   dashboardStore.fetchApplications(true).catch(() => undefined)
 })
 
+onUnmounted(() => {
+  stopIntegrityPolling()
+})
+
 watch(selectedApplication, async (value) => {
   if (!value) {
     integrityDetails.value = null
+    stopIntegrityPolling()
     return
   }
 
   const [namespace, name] = value.split('/')
   integrityDetails.value = await dashboardStore.fetchIntegrity(namespace, name, true)
+  startIntegrityPolling()
 })
 
 async function revalidateIntegrity() {
@@ -344,20 +417,41 @@ function submitDeclaration() {
                 </div>
               </v-alert>
 
-              <v-list lines="two">
-              <v-list-item v-for="item in integrityDetails.integrityLedger || []" :key="item.id">
-                <template v-slot:prepend>
-                  <v-avatar :color="ledgerColor(item.status)" size="28">
-                    <v-icon size="16">{{ ledgerIcon(item.status, item.id) }}</v-icon>
-                  </v-avatar>
-                </template>
-                <v-list-item-title class="d-flex align-center ga-2 flex-wrap">
-                  <span>{{ item.title }}</span>
-                  <v-chip :color="ledgerColor(item.status)" size="x-small" variant="tonal">{{ item.status }}</v-chip>
-                </v-list-item-title>
-                <v-list-item-subtitle style="white-space: pre-wrap">{{ formatLedgerDetails(item.details) }}</v-list-item-subtitle>
-              </v-list-item>
-              </v-list>
+              <v-row>
+                <v-col cols="12" v-for="item in integrityDetails.integrityLedger || []" :key="item.id">
+                  <v-card class="gc-border" flat style="border: 1px solid rgba(var(--v-theme-on-surface), 0.08)">
+                    <v-card-text>
+                      <div class="d-flex align-center justify-space-between mb-2 ga-2 flex-wrap">
+                        <div class="d-flex align-center ga-2">
+                          <v-avatar :color="ledgerColor(item.status)" size="28">
+                            <v-icon size="16">{{ ledgerIcon(item.status, item.id) }}</v-icon>
+                          </v-avatar>
+                          <div class="text-body-2 font-weight-medium">{{ item.title }}</div>
+                        </div>
+                        <v-chip :color="ledgerColor(item.status)" size="x-small" variant="tonal">{{ item.status }}</v-chip>
+                      </div>
+
+                      <v-row v-if="ledgerDetailsEntries(item.details).length">
+                        <v-col cols="12" md="6" v-for="entry in ledgerDetailsEntries(item.details)" :key="`${item.id}-${entry.key}`">
+                          <div class="text-caption text-secondary mb-1">{{ entry.key }}</div>
+                          <div class="d-flex align-center ga-2">
+                            <div class="text-body-2 text-medium-emphasis flex-grow-1" style="word-break: break-all;">{{ entry.value || 'n/a' }}</div>
+                            <v-btn
+                              v-if="entry.value"
+                              icon="mdi-content-copy"
+                              size="x-small"
+                              variant="text"
+                              color="primary"
+                              @click="copyToClipboard(entry.value)"
+                            ></v-btn>
+                          </div>
+                        </v-col>
+                      </v-row>
+                      <div v-else class="text-caption text-secondary">No details exposed for this stage.</div>
+                    </v-card-text>
+                  </v-card>
+                </v-col>
+              </v-row>
             </template>
             <div v-else class="text-caption text-secondary">Selectează o aplicație pentru a vedea detaliile VBBI și policy gate-ul.</div>
           </v-card-text>
@@ -498,6 +592,12 @@ function submitDeclaration() {
     </v-row>
 
     <v-row v-if="integrityDetails" class="mt-2">
+      <v-col cols="12" xl="7">
+        <ReconcileFlow :flow="integrityDetails.reconcileFlow" />
+      </v-col>
+      <v-col cols="12" xl="5">
+        <ProvisioningPlan :plan="integrityDetails.provisioningPlan || []" />
+      </v-col>
       <v-col cols="12">
         <TrustCascadeView :cascade="integrityDetails.trustCascade" />
       </v-col>
@@ -519,8 +619,8 @@ function submitDeclaration() {
           <v-card-text>
             <div class="text-body-2 mb-3">Falco CM {{ integrityDetails.runtimeForensics?.localFalcoRuleConfigMap || 'n/a' }} • Talon rule {{ integrityDetails.runtimeForensics?.talonRuleReference || 'n/a' }}</div>
             <div class="d-flex flex-wrap ga-2 mb-3">
-              <v-chip :color="integrityDetails.runtimeForensics?.localRulePresent ? 'success' : 'warning'" variant="tonal">Local rule {{ integrityDetails.runtimeForensics?.localRulePresent ? 'present' : 'missing' }}</v-chip>
-              <v-chip :color="integrityDetails.runtimeForensics?.talonRulePresent ? 'success' : 'warning'" variant="tonal">Talon {{ integrityDetails.runtimeForensics?.talonRulePresent ? 'patched' : 'not patched' }}</v-chip>
+              <v-chip :color="integrityDetails.runtimeForensics?.localRulePresent ? 'success' : 'error'" variant="tonal">Local rule {{ integrityDetails.runtimeForensics?.localRulePresent ? 'present' : 'missing' }}</v-chip>
+              <v-chip :color="integrityDetails.runtimeForensics?.talonRulePresent ? 'success' : 'error'" variant="tonal">Talon {{ integrityDetails.runtimeForensics?.talonRulePresent ? 'patched' : 'not patched' }}</v-chip>
             </div>
             <div class="text-caption text-secondary mb-2">Allowed paths</div>
             <div class="d-flex flex-wrap ga-2">
@@ -534,7 +634,7 @@ function submitDeclaration() {
           <v-card-title class="text-primary">Sanction History</v-card-title>
           <v-card-text>
             <v-timeline density="compact" align="start" side="end">
-              <v-timeline-item v-for="(event, index) in (integrityDetails.sanctionHistory || [])" :key="`${event.kind}-${index}`" size="small" dot-color="warning">
+              <v-timeline-item v-for="(event, index) in (integrityDetails.sanctionHistory || [])" :key="`${event.kind}-${index}`" size="small" :dot-color="sanctionDotColor(event)">
                 <div class="text-body-2 font-weight-medium">{{ event.action }}</div>
                 <div class="text-caption text-secondary">{{ event.message }}</div>
                 <div class="text-caption mt-1">{{ event.timestamp || 'timestamp unavailable' }}</div>

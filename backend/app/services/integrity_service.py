@@ -167,6 +167,7 @@ def _build_sbom_tree(attestations: dict[str, Any]) -> list[dict[str, Any]]:
 
 def _build_vulnerability_heatmap(application: dict[str, Any], policy: dict[str, Any] | None) -> dict[str, Any]:
     details = (application.get("status", {}) or {}).get("details", {}) or {}
+    active_violations = _unique_preserve_order((application.get("status", {}) or {}).get("activeViolations", []) or [])
     threshold = ((policy or {}).get("summary", {}) or {}).get("maxAllowedSeverity")
     counts = {"LOW": 0, "MEDIUM": 0, "HIGH": 0, "CRITICAL": 0}
     severity_counts = details.get("severityCounts", {}) or {}
@@ -175,6 +176,15 @@ def _build_vulnerability_heatmap(application: dict[str, Any], policy: dict[str, 
     highest = str(details.get("highest", details.get("severity", ""))).upper().strip()
     if highest in counts and sum(counts.values()) == 0:
         counts[highest] = 1
+
+    # Fallback for alert-only Trivy outputs where severityCounts is absent in status.details.
+    if sum(counts.values()) == 0:
+        threshold_upper = str(threshold or "HIGH").upper().strip()
+        if "trivy-fixable-vulnerability-found" in " ".join(active_violations).lower():
+            inferred = threshold_upper if threshold_upper in counts else "HIGH"
+            counts[inferred] = 1
+            highest = highest or inferred
+
     return {
         "counts": counts,
         "highest": highest or "NONE",
@@ -193,6 +203,7 @@ def _build_sanction_history(application: dict[str, Any], policy: dict[str, Any] 
         history.append({
             "kind": "provenance",
             "action": "Verified",
+            "severity": "success",
             "timestamp": summary.get("provenanceVerifiedAt"),
             "message": "Provenance-Enforcer marked the workload as verified.",
         })
@@ -202,6 +213,7 @@ def _build_sanction_history(application: dict[str, Any], policy: dict[str, Any] 
         history.append({
             "kind": "violation",
             "action": runtime.get("onPolicyDrift", "Alert"),
+            "severity": "error",
             "timestamp": status.get("lastVerified") or application.get("metadata", {}).get("createdAt"),
             "message": f"{message} (x{count})" if count > 1 else message,
         })
@@ -209,6 +221,7 @@ def _build_sanction_history(application: dict[str, Any], policy: dict[str, Any] 
         history.append({
             "kind": "security-state",
             "action": status.get("securityState"),
+            "severity": "error",
             "timestamp": status.get("lastVerified") or application.get("metadata", {}).get("createdAt"),
             "message": summary.get("lastErrorSummary") or status.get("lastError") or "Security state changed due to operator enforcement.",
         })
@@ -221,6 +234,173 @@ def _build_sanction_history(application: dict[str, Any], policy: dict[str, Any] 
         seen.add(key)
         deduped_history.append(item)
     return deduped_history
+
+
+def _build_provisioning_plan(application: dict[str, Any]) -> list[dict[str, Any]]:
+    spec = application.get("spec", {}) or {}
+    network = spec.get("networkZeroTrust", {}) or {}
+    ingress = network.get("ingressAllowedFrom", []) or []
+    egress = network.get("egressAllowedTo", []) or []
+    has_waf = bool(spec.get("wafConfig", {}))
+    has_runtime = bool(spec.get("runtimeSecurity", {}))
+
+    return [
+        {
+            "id": "deployment",
+            "title": "Kubernetes Deployment",
+            "kind": "apps/v1 Deployment",
+            "enabled": True,
+            "reason": "Always created for ZeroTrustApplication workload.",
+        },
+        {
+            "id": "service",
+            "title": "Kubernetes Service",
+            "kind": "v1 Service",
+            "enabled": True,
+            "reason": "Always created for service discovery and traffic exposure.",
+        },
+        {
+            "id": "networkpolicy",
+            "title": "Microsegmentation Policy",
+            "kind": "networking.k8s.io/v1 NetworkPolicy",
+            "enabled": bool(ingress or egress),
+            "reason": "Created only if ingress/egress constraints are declared in networkZeroTrust.",
+        },
+        {
+            "id": "authorizationpolicy",
+            "title": "Istio AuthorizationPolicy",
+            "kind": "security.istio.io AuthorizationPolicy",
+            "enabled": has_waf,
+            "reason": "Created only when wafConfig is present.",
+        },
+        {
+            "id": "wasmplugin",
+            "title": "Istio WasmPlugin (Coraza)",
+            "kind": "extensions.istio.io WasmPlugin",
+            "enabled": has_waf,
+            "reason": "Created only when wafConfig is present.",
+        },
+        {
+            "id": "falco-rule-configmap",
+            "title": "Falco Rule ConfigMap",
+            "kind": "v1 ConfigMap",
+            "enabled": has_runtime,
+            "reason": "Created only when runtimeSecurity is present.",
+        },
+        {
+            "id": "talon-patch",
+            "title": "Talon Runtime Rule Patch",
+            "kind": "Falco Talon ConfigMap patch",
+            "enabled": has_runtime,
+            "reason": "Patched only when runtimeSecurity is present.",
+        },
+    ]
+
+
+def _build_reconcile_flow(application: dict[str, Any], policy: dict[str, Any] | None, provisioning_plan: list[dict[str, Any]]) -> dict[str, Any]:
+    summary = application.get("summary", {}) or {}
+    status = application.get("status", {}) or {}
+    phase = str(summary.get("phase", "Pending") or "Pending")
+    trust_level = str(summary.get("trustLevel", "Untrusted") or "Untrusted")
+    security_state = str(summary.get("securityState", "Unknown") or "Unknown")
+    has_error = bool(summary.get("lastError"))
+    hash_mismatch = bool(summary.get("hasHashMismatch"))
+    provenance_required = bool(((status.get("provenance", {}) or {}).get("required", False)) or (((policy or {}).get("summary", {}) or {}).get("requireVoucher", False)))
+
+    def _stage_status(stage_id: str) -> str:
+        if stage_id == "manifest":
+            return "success"
+
+        if stage_id == "provenance":
+            if not provenance_required:
+                return "skipped"
+            if trust_level == "Verified":
+                return "success"
+            if trust_level == "UntrustedProvenance":
+                return "failed"
+            if phase in {"Pending", "Validating"}:
+                return "running"
+            return "pending"
+
+        if stage_id == "supply-chain":
+            if phase == "Validating":
+                return "running"
+            if phase == "Failed_SupplyChain":
+                return "failed"
+            if security_state == "Alert":
+                return "warning"
+            if trust_level == "Verified":
+                return "success"
+            return "pending"
+
+        if stage_id == "attestation":
+            if hash_mismatch:
+                return "failed"
+            if summary.get("expectedInfraHash") or summary.get("computedInfraHash"):
+                return "success"
+            return "pending"
+
+        if stage_id == "resource-plan":
+            return "success"
+
+        if stage_id == "provisioning":
+            if has_error and phase in {"Degraded", "Failed_SupplyChain"}:
+                return "failed"
+            if phase in {"Provisioning", "Validating"}:
+                return "running"
+            if phase in {"Running", "Degraded"}:
+                return "success"
+            return "pending"
+
+        if stage_id == "runtime":
+            runtime_enabled = any(item.get("id") == "falco-rule-configmap" and item.get("enabled") for item in provisioning_plan)
+            if not runtime_enabled:
+                return "skipped"
+            if has_error and phase in {"Degraded", "Failed_SupplyChain"}:
+                return "failed"
+            if phase in {"Provisioning", "Validating"}:
+                return "running"
+            return "success" if phase in {"Running", "Degraded"} else "pending"
+
+        if stage_id == "ready":
+            if phase in {"Failed_SupplyChain"}:
+                return "failed"
+            if security_state == "Alert":
+                return "warning"
+            if phase == "Running" and trust_level == "Verified":
+                return "success"
+            if phase in {"Pending", "Provisioning", "Validating"}:
+                return "running"
+            return "pending"
+
+        return "pending"
+
+    stages = [
+        {"id": "manifest", "title": "Manifest Accepted", "description": "ZeroTrustApplication parsed and admitted."},
+        {"id": "provenance", "title": "Provenance Gate", "description": "VBBI voucher, HMAC chain, and Merkle verification."},
+        {"id": "supply-chain", "title": "Supply-Chain Scan", "description": "Cosign + Trivy policy checks."},
+        {"id": "attestation", "title": "Attestation Binding", "description": "SCA policy matching and manifest hash validation."},
+        {"id": "resource-plan", "title": "Resource Planning", "description": "Determine optional Istio/Falco/Talon resources from manifest."},
+        {"id": "provisioning", "title": "Provisioning", "description": "Apply Deployment, Service, and optional resources."},
+        {"id": "runtime", "title": "Runtime Enforcement", "description": "Configure Falco/Talon runtime controls if enabled."},
+        {"id": "ready", "title": "Operational State", "description": "Final security state exposed to dashboard."},
+    ]
+
+    decorated = []
+    active = None
+    for stage in stages:
+        status_value = _stage_status(stage["id"])
+        if active is None and status_value == "running":
+            active = stage["id"]
+        decorated.append({**stage, "status": status_value})
+
+    return {
+        "phase": phase,
+        "trustLevel": trust_level,
+        "securityState": security_state,
+        "activeStage": active,
+        "stages": decorated,
+    }
 
 
 async def _build_runtime_forensics(application: dict[str, Any]) -> dict[str, Any]:
@@ -381,12 +561,15 @@ async def _collect_integrity_payload(namespace: str, name: str, force_oci: bool 
             related_secrets.append(serialize_zts_resource(item))
 
     attestations = (application.get("status", {}) or {}).get("attestations", {})
+    provisioning_plan = _build_provisioning_plan(application)
     payload = {
         "application": application,
         "policy": policy,
         "secretBindings": related_secrets,
         "integrityLedger": _build_integrity_ledger(application, policy),
         "trustCascade": _build_trust_cascade(application, policy, related_secrets),
+        "reconcileFlow": _build_reconcile_flow(application, policy, provisioning_plan),
+        "provisioningPlan": provisioning_plan,
         "attestations": attestations,
         "provenance": (application.get("status", {}) or {}).get("provenance", {}),
         "revalidation": await _build_revalidation(application, policy, force_oci=force_oci),
