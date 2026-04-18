@@ -622,44 +622,48 @@ function submitDeclaration() {
       </v-col>
     </v-row>
 
-    <v-row v-if="integrityDetails" class="mt-2">
-      <v-col cols="12" xl="7">
+    <section v-if="integrityDetails" class="integrity-dashboard mt-6">
+      <div class="dashboard-panel span-12">
         <ReconcileFlow :flow="integrityDetails.reconcileFlow" />
-      </v-col>
-      <v-col cols="12" xl="7">
+      </div>
+
+      <div class="dashboard-panel span-7-lg span-12-sm">
         <BuildLedgerGraph :nodes="integrityDetails.revalidation?.ledgerNodes || []" :status="integrityDetails.revalidation?.status" />
-      </v-col>
-      <v-col cols="12" xl="5">
+      </div>
+      <div class="dashboard-panel span-5-lg span-12-sm">
         <ProvisioningPlan :plan="integrityDetails.provisioningPlan || []" />
-      </v-col>
-      <v-col cols="12" class="d-flex justify-center">
-        <div style="width: 100%; max-width: 900px;">
-          <MerkleTreeExplorer :levels="integrityDetails.revalidation?.merkleLevels || []" :summary="integrityDetails.revalidation?.merkle || {}" />
-        </div>
-      </v-col>
-      <v-col cols="12" lg="6">
+      </div>
+
+      <div class="dashboard-panel span-7-lg span-12-sm">
+        <MerkleTreeExplorer :levels="integrityDetails.revalidation?.merkleLevels || []" :summary="integrityDetails.revalidation?.merkle || {}" />
+      </div>
+      <div class="dashboard-panel span-5-lg span-12-sm">
         <SbomTree :groups="integrityDetails.sbomTree || []" />
-      </v-col>
-      <v-col cols="12" md="6">
-        <v-card class="gc-border" flat>
-          <v-card-title class="text-primary">Runtime Forensics</v-card-title>
-          <v-card-text>
-            <div class="text-body-2 mb-3">Falco CM {{ integrityDetails.runtimeForensics?.localFalcoRuleConfigMap || 'n/a' }} • Talon rule {{ integrityDetails.runtimeForensics?.talonRuleReference || 'n/a' }}</div>
-            <div class="d-flex flex-wrap ga-2 mb-3">
+      </div>
+
+      <div class="dashboard-panel span-6-lg span-12-sm">
+        <v-card class="gc-border panel-card" flat>
+          <v-card-title class="text-primary panel-title">Runtime Forensics</v-card-title>
+          <v-card-text class="panel-content stack-16">
+            <div class="text-body-2">Falco CM {{ integrityDetails.runtimeForensics?.localFalcoRuleConfigMap || 'n/a' }} • Talon rule {{ integrityDetails.runtimeForensics?.talonRuleReference || 'n/a' }}</div>
+            <div class="d-flex flex-wrap align-center ga-2">
               <v-chip :color="integrityDetails.runtimeForensics?.localRulePresent ? 'success' : 'error'" variant="tonal">Local rule {{ integrityDetails.runtimeForensics?.localRulePresent ? 'present' : 'missing' }}</v-chip>
               <v-chip :color="integrityDetails.runtimeForensics?.talonRulePresent ? 'success' : 'error'" variant="tonal">Talon {{ integrityDetails.runtimeForensics?.talonRulePresent ? 'patched' : 'not patched' }}</v-chip>
             </div>
-            <div class="text-caption text-secondary mb-2">Allowed paths</div>
-            <div class="d-flex flex-wrap ga-2">
-              <v-chip v-for="path in (integrityDetails.runtimeForensics?.allowedPaths || [])" :key="path" size="small" variant="outlined">{{ path }}</v-chip>
+            <div>
+              <div class="text-caption text-secondary mb-2">Allowed paths</div>
+              <div class="d-flex flex-wrap align-center ga-2">
+                <v-chip v-for="path in (integrityDetails.runtimeForensics?.allowedPaths || [])" :key="path" size="small" variant="outlined">{{ path }}</v-chip>
+              </div>
             </div>
           </v-card-text>
         </v-card>
-      </v-col>
-      <v-col cols="12" md="6">
-        <v-card class="gc-border" flat>
-          <v-card-title class="text-primary">Sanction History</v-card-title>
-          <v-card-text>
+      </div>
+
+      <div class="dashboard-panel span-6-lg span-12-sm">
+        <v-card class="gc-border panel-card" flat>
+          <v-card-title class="text-primary panel-title">Sanction History</v-card-title>
+          <v-card-text class="panel-content">
             <v-timeline density="compact" align="start" side="end">
               <v-timeline-item v-for="(event, index) in (integrityDetails.sanctionHistory || [])" :key="`${event.kind}-${index}`" size="small" :dot-color="sanctionDotColor(event)">
                 <div class="text-body-2 font-weight-medium">{{ event.action }}</div>
@@ -670,7 +674,66 @@ function submitDeclaration() {
             <div v-if="!(integrityDetails.sanctionHistory || []).length" class="text-caption text-secondary">No enforcement history recorded yet.</div>
           </v-card-text>
         </v-card>
-      </v-col>
-    </v-row>
+      </div>
+    </section>
   </div>
 </template>
+
+<style scoped>
+.integrity-dashboard {
+  --space-8: 8px;
+  --space-16: 16px;
+  --space-24: 24px;
+
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: var(--space-24);
+  align-items: stretch;
+}
+
+.dashboard-panel {
+  min-width: 0;
+  align-self: stretch;
+}
+
+.span-12,
+.span-12-sm {
+  grid-column: span 12;
+}
+
+.panel-card {
+  height: 100%;
+  border: 1px solid rgba(var(--v-theme-on-surface), 0.08);
+}
+
+.panel-title {
+  min-height: 56px;
+  display: flex;
+  align-items: center;
+  padding-top: var(--space-16);
+  padding-bottom: var(--space-8);
+}
+
+.panel-content {
+  padding-top: var(--space-8);
+  padding-bottom: var(--space-16);
+}
+
+.stack-16 > * + * {
+  margin-top: var(--space-16);
+}
+
+@media (min-width: 1280px) {
+  .span-7-lg {
+    grid-column: span 7;
+  }
+
+  .span-6-lg {
+    grid-column: span 6;
+  }
+
+  .span-5-lg {
+    grid-column: span 5;
+  }
+}
+</style>

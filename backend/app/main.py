@@ -6,6 +6,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from app.core.k8s import close_k8s, init_k8s
 from app.core.logging import configure_logging
+from app.core.state_db import close_state_db, init_state_db
 from app.middleware.errors import global_exception_handler
 from app.api import drift_routes, integrity_routes, jit_routes, overview_routes, sca_routes, system_routes, zta_routes, zts_routes
 
@@ -64,6 +65,8 @@ async def startup_event():
     # Inițializează clientul k8s async la pornirea serverului.
     logger.info("Initializing Kubernetes async client")
     await init_k8s()
+    init_state_db()
+    logger.info("Initialized in-memory SQLite state cache")
     logger.info("Kubernetes async client initialized successfully")
 
 
@@ -71,6 +74,8 @@ async def startup_event():
 async def shutdown_event():
     logger.info("Closing Kubernetes async client")
     await close_k8s()
+    close_state_db()
+    logger.info("Closed in-memory SQLite state cache")
     logger.info("Kubernetes async client closed successfully")
 
 @app.get("/api/v1/health", tags=["System"])

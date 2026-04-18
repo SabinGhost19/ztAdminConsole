@@ -8,6 +8,7 @@ from kubernetes_asyncio import client
 
 from app.core.k8s import get_core_api
 from app.middleware.errors import ZeroTrustException
+from app.services.state_cache import get_integrity_snapshot_record, set_integrity_snapshot
 from app.services.provenance_revalidation import RevalidationError, revalidate_vbbi
 from app.services.k8s_scanner import SCA_PLURAL, ZTA_PLURAL, ZTS_PLURAL, scanner
 from app.services.serializers import serialize_sca_resource, serialize_zta_resource, serialize_zts_resource
@@ -16,6 +17,24 @@ TALON_NAMESPACE = os.getenv("TALON_NAMESPACE", "falco-talon")
 TALON_CONFIGMAP_NAME = os.getenv("TALON_CONFIGMAP_NAME", "falco-talon-rules")
 TALON_CONFIGMAP_KEY = os.getenv("TALON_CONFIGMAP_KEY", "rules.yaml")
 logger = logging.getLogger("zero_trust_integrity_service")
+
+
+def _with_cache_details(payload: dict[str, Any], cache_record: dict[str, Any] | None) -> dict[str, Any]:
+    if cache_record is None:
+        return payload
+
+    response = dict(payload)
+    response["_cache"] = {
+        "cacheKey": cache_record.get("cacheKey"),
+        "stateType": cache_record.get("stateType"),
+        "stateVersion": cache_record.get("stateVersion"),
+        "status": cache_record.get("status"),
+        "fingerprint": cache_record.get("fingerprint"),
+        "metadata": cache_record.get("metadata", {}),
+        "updatedAt": cache_record.get("updatedAt"),
+        "accessedAt": cache_record.get("accessedAt"),
+    }
+    return response
 
 
 def _unique_preserve_order(values: list[Any]) -> list[str]:
@@ -594,7 +613,17 @@ async def list_integrity_applications() -> list[dict[str, Any]]:
 
 async def get_application_integrity(namespace: str, name: str) -> dict[str, Any]:
     logger.info("Fetching application integrity", extra={"details": {"namespace": namespace, "name": name}})
-    return await _collect_integrity_payload(namespace, name, force_oci=False)
+    cached_record = get_integrity_snapshot_record(namespace, name)
+    cached_payload = (cached_record or {}).get("payload") if cached_record else None
+    if isinstance(cached_payload, dict):
+        logger.info("Serving integrity payload from in-memory SQLite snapshot", extra={"details": {"namespace": namespace, "name": name}})
+        return _with_cache_details(cached_payload, cached_record)
+
+    payload = await _collect_integrity_payload(namespace, name, force_oci=False)
+    if payload:
+        set_integrity_snapshot(namespace, name, payload)
+        cached_record = get_integrity_snapshot_record(namespace, name)
+    return _with_cache_details(payload, cached_record)
 
 
 async def revalidate_application_integrity(namespace: str, name: str) -> dict[str, Any]:
@@ -608,4 +637,5 @@ async def revalidate_application_integrity(namespace: str, name: str) -> dict[st
             component="INTEGRITY_ENGINE",
             action_required="Selectează o aplicație validă.",
         )
-    return payload
+    set_integrity_snapshot(namespace, name, payload)
+    return _with_cache_details(payload, get_integrity_snapshot_record(namespace, name))
