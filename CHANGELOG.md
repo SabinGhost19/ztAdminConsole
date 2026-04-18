@@ -1,3 +1,10 @@
+## [1.2.1](https://github.com/SabinGhost19/ztAdminConsole/compare/v1.2.0...v1.2.1) (2026-04-18)
+
+
+### Bug Fixes
+
+* reconcile ui ([d01c0a5](https://github.com/SabinGhost19/ztAdminConsole/commit/d01c0a58c54f03f21cd75a00804ab2da348f2f87))
+
 # [1.2.0](https://github.com/SabinGhost19/ztAdminConsole/compare/v1.1.5...v1.2.0) (2026-04-18)
 
 
