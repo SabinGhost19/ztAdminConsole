@@ -7,7 +7,6 @@ import MerkleTreeExplorer from '../components/MerkleTreeExplorer.vue'
 import ProvisioningPlan from '../components/ProvisioningPlan.vue'
 import ReconcileFlow from '../components/ReconcileFlow.vue'
 import SbomTree from '../components/SbomTree.vue'
-import TrustCascadeView from '../components/TrustCascadeView.vue'
 import { useNotificationStore } from '../store/notification'
 import { useDashboardStore } from '../store/dashboard'
 
@@ -16,7 +15,7 @@ const dashboardStore = useDashboardStore()
 
 const step = ref(1)
 const builderPanels = ref<number[]>([])
-const integrityPanels = ref<number[]>([])
+const showIntegrityLedger = ref(false)
 const isSubmitting = ref(false)
 const selectedApplication = ref('')
 const integrityDetails = ref<any | null>(null)
@@ -133,7 +132,11 @@ function startIntegrityPolling() {
   integrityPoller.value = window.setInterval(async () => {
     const [namespace, name] = selectedApplication.value.split('/')
     if (!namespace || !name) return
-    integrityDetails.value = await dashboardStore.fetchIntegrity(namespace, name, true)
+    const payload = await dashboardStore.fetchIntegrity(namespace, name, true)
+    integrityDetails.value = payload
+    if (isIntegrityFlowStable(payload)) {
+      stopIntegrityPolling()
+    }
   }, 8000)
 }
 
@@ -155,6 +158,14 @@ function sanctionDotColor(event: any) {
   if (action.includes('alert')) return 'error'
   if (action.includes('kill') || action.includes('isolate') || action.includes('blocked') || action.includes('noncompliant')) return 'error'
   return 'warning'
+}
+
+function isIntegrityFlowStable(payload: any) {
+  if (!payload) return false
+  const phase = String(payload?.application?.summary?.phase || payload?.reconcileFlow?.phase || '')
+  const stages = payload?.reconcileFlow?.stages || []
+  const hasRunningStage = Array.isArray(stages) && stages.some((stage: any) => stage?.status === 'running')
+  return phase === 'Running' && !hasRunningStage
 }
 
 const integrityCriticalIssues = computed(() => {
@@ -255,8 +266,13 @@ watch(selectedApplication, async (value) => {
   }
 
   const [namespace, name] = value.split('/')
-  integrityDetails.value = await dashboardStore.fetchIntegrity(namespace, name, true)
-  startIntegrityPolling()
+  const payload = await dashboardStore.fetchIntegrity(namespace, name, true)
+  integrityDetails.value = payload
+  if (isIntegrityFlowStable(payload)) {
+    stopIntegrityPolling()
+  } else {
+    startIntegrityPolling()
+  }
 })
 
 async function revalidateIntegrity() {
@@ -393,12 +409,24 @@ function submitDeclaration() {
         <v-card class="gc-border" style="border: 1px solid rgba(var(--v-theme-on-surface), 0.12)" flat>
           <v-card-title class="font-weight-medium pb-2 text-primary d-flex align-center justify-space-between">
             <span>Integrity Ledger</span>
-            <v-btn size="small" variant="outlined" color="primary" :disabled="!selectedApplication" :loading="isRevalidating" @click="revalidateIntegrity">
-              Revalidate OCI
-            </v-btn>
+            <div class="d-flex ga-2">
+              <v-btn
+                size="small"
+                variant="tonal"
+                color="primary"
+                :disabled="!selectedApplication"
+                :append-icon="showIntegrityLedger ? 'mdi-chevron-up' : 'mdi-chevron-down'"
+                @click="showIntegrityLedger = !showIntegrityLedger"
+              >
+                {{ showIntegrityLedger ? 'Hide Ledger' : 'Show Ledger' }}
+              </v-btn>
+              <v-btn size="small" variant="outlined" color="primary" :disabled="!selectedApplication" :loading="isRevalidating" @click="revalidateIntegrity">
+                Revalidate OCI
+              </v-btn>
+            </div>
           </v-card-title>
           <v-card-text>
-            <div v-if="isLoadingIntegrity" class="text-caption text-secondary">Loading integrity details...</div>
+            <div v-if="isLoadingIntegrity && !integrityDetails" class="text-caption text-secondary">Loading integrity details...</div>
             <template v-else-if="integrityDetails">
               <v-alert
                 v-for="(issue, index) in integrityCriticalIssues"
@@ -417,42 +445,42 @@ function submitDeclaration() {
                 </div>
               </v-alert>
 
-              <v-row>
+              <div v-if="!showIntegrityLedger" class="text-caption text-secondary">
+                Ledger is hidden. Use "Show Ledger" to display all integrity stages.
+              </div>
+
+              <v-row v-else>
                 <v-col cols="12" v-for="item in integrityDetails.integrityLedger || []" :key="item.id">
-                  <v-expansion-panels v-model="integrityPanels" variant="accordion" class="gc-border" style="border: 1px solid rgba(var(--v-theme-on-surface), 0.08)">
-                    <v-expansion-panel>
-                      <v-expansion-panel-title>
-                        <div class="d-flex align-center justify-space-between w-100 ga-2 flex-wrap">
-                          <div class="d-flex align-center ga-2">
-                            <v-avatar :color="ledgerColor(item.status)" size="28">
-                              <v-icon size="16">{{ ledgerIcon(item.status, item.id) }}</v-icon>
-                            </v-avatar>
-                            <div class="text-body-2 font-weight-medium">{{ item.title }}</div>
-                          </div>
-                          <v-chip :color="ledgerColor(item.status)" size="x-small" variant="tonal">{{ item.status }}</v-chip>
+                  <v-card class="gc-border" flat style="border: 1px solid rgba(var(--v-theme-on-surface), 0.08)">
+                    <v-card-text>
+                      <div class="d-flex align-center justify-space-between w-100 ga-2 flex-wrap mb-2">
+                        <div class="d-flex align-center ga-2">
+                          <v-avatar :color="ledgerColor(item.status)" size="28">
+                            <v-icon size="16">{{ ledgerIcon(item.status, item.id) }}</v-icon>
+                          </v-avatar>
+                          <div class="text-body-2 font-weight-medium">{{ item.title }}</div>
                         </div>
-                      </v-expansion-panel-title>
-                      <v-expansion-panel-text>
-                        <v-row v-if="ledgerDetailsEntries(item.details).length">
-                          <v-col cols="12" md="6" v-for="entry in ledgerDetailsEntries(item.details)" :key="`${item.id}-${entry.key}`">
-                            <div class="text-caption text-secondary mb-1">{{ entry.key }}</div>
-                            <div class="d-flex align-center ga-2">
-                              <div class="text-body-2 text-medium-emphasis flex-grow-1" style="word-break: break-all;">{{ entry.value || 'n/a' }}</div>
-                              <v-btn
-                                v-if="entry.value"
-                                icon="mdi-content-copy"
-                                size="x-small"
-                                variant="text"
-                                color="primary"
-                                @click="copyToClipboard(entry.value)"
-                              ></v-btn>
-                            </div>
-                          </v-col>
-                        </v-row>
-                        <div v-else class="text-caption text-secondary">No details exposed for this stage.</div>
-                      </v-expansion-panel-text>
-                    </v-expansion-panel>
-                  </v-expansion-panels>
+                        <v-chip :color="ledgerColor(item.status)" size="x-small" variant="tonal">{{ item.status }}</v-chip>
+                      </div>
+                      <v-row v-if="ledgerDetailsEntries(item.details).length">
+                        <v-col cols="12" md="6" v-for="entry in ledgerDetailsEntries(item.details)" :key="`${item.id}-${entry.key}`">
+                          <div class="text-caption text-secondary mb-1">{{ entry.key }}</div>
+                          <div class="d-flex align-center ga-2">
+                            <div class="text-body-2 text-medium-emphasis flex-grow-1" style="word-break: break-all;">{{ entry.value || 'n/a' }}</div>
+                            <v-btn
+                              v-if="entry.value"
+                              icon="mdi-content-copy"
+                              size="x-small"
+                              variant="text"
+                              color="primary"
+                              @click="copyToClipboard(entry.value)"
+                            ></v-btn>
+                          </div>
+                        </v-col>
+                      </v-row>
+                      <div v-else class="text-caption text-secondary">No details exposed for this stage.</div>
+                    </v-card-text>
+                  </v-card>
                 </v-col>
               </v-row>
             </template>
@@ -598,17 +626,16 @@ function submitDeclaration() {
       <v-col cols="12" xl="7">
         <ReconcileFlow :flow="integrityDetails.reconcileFlow" />
       </v-col>
-      <v-col cols="12" xl="5">
-        <ProvisioningPlan :plan="integrityDetails.provisioningPlan || []" />
-      </v-col>
-      <v-col cols="12">
-        <TrustCascadeView :cascade="integrityDetails.trustCascade" />
-      </v-col>
       <v-col cols="12" xl="7">
         <BuildLedgerGraph :nodes="integrityDetails.revalidation?.ledgerNodes || []" :status="integrityDetails.revalidation?.status" />
       </v-col>
       <v-col cols="12" xl="5">
-        <MerkleTreeExplorer :levels="integrityDetails.revalidation?.merkleLevels || []" :summary="integrityDetails.revalidation?.merkle || {}" />
+        <ProvisioningPlan :plan="integrityDetails.provisioningPlan || []" />
+      </v-col>
+      <v-col cols="12" class="d-flex justify-center">
+        <div style="width: 100%; max-width: 900px;">
+          <MerkleTreeExplorer :levels="integrityDetails.revalidation?.merkleLevels || []" :summary="integrityDetails.revalidation?.merkle || {}" />
+        </div>
       </v-col>
       <v-col cols="12" lg="6">
         <SbomTree :groups="integrityDetails.sbomTree || []" />

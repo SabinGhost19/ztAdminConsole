@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, computed, onUnmounted } from 'vue'
+import { ref, onMounted, computed, onUnmounted, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useTheme } from 'vuetify'
 import { api } from './api/axios'
@@ -36,15 +36,29 @@ onMounted(async () => {
   }
 
   dashboardStore.fetchOverview().catch(() => undefined)
-  refreshBackendLogs().catch(() => undefined)
-  backendLogsTimer = setInterval(() => {
-    refreshBackendLogs().catch(() => undefined)
-  }, 10000)
 })
 
 onUnmounted(() => {
   if (backendLogsTimer) {
     clearInterval(backendLogsTimer)
+    backendLogsTimer = null
+  }
+})
+
+watch(errorCenterOpen, (open) => {
+  if (open) {
+    refreshBackendLogs().catch(() => undefined)
+    if (!backendLogsTimer) {
+      backendLogsTimer = setInterval(() => {
+        refreshBackendLogs().catch(() => undefined)
+      }, 10000)
+    }
+    return
+  }
+
+  if (backendLogsTimer) {
+    clearInterval(backendLogsTimer)
+    backendLogsTimer = null
   }
 })
 
