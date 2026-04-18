@@ -1,3 +1,10 @@
+## [1.2.2](https://github.com/SabinGhost19/ztAdminConsole/compare/v1.2.1...v1.2.2) (2026-04-18)
+
+
+### Bug Fixes
+
+* reconcile zta resource ([a2a35cf](https://github.com/SabinGhost19/ztAdminConsole/commit/a2a35cf4cf7d8180e5aec4ab82447145a69cad52))
+
 ## [1.2.1](https://github.com/SabinGhost19/ztAdminConsole/compare/v1.2.0...v1.2.1) (2026-04-18)
 
 
