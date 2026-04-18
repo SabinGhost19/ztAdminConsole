@@ -1,3 +1,10 @@
+## [1.2.3](https://github.com/SabinGhost19/ztAdminConsole/compare/v1.2.2...v1.2.3) (2026-04-18)
+
+
+### Bug Fixes
+
+* ui updated for merkel tree arangement ([aba6d56](https://github.com/SabinGhost19/ztAdminConsole/commit/aba6d5697f378d70cad6110fc89c44bc5ab408eb))
+
 ## [1.2.2](https://github.com/SabinGhost19/ztAdminConsole/compare/v1.2.1...v1.2.2) (2026-04-18)
 
 
