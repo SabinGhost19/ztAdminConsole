@@ -1,3 +1,10 @@
+# [1.2.0](https://github.com/SabinGhost19/ztAdminConsole/compare/v1.1.5...v1.2.0) (2026-04-18)
+
+
+### Features
+
+* actions vizualizer for reconcile ([536cf06](https://github.com/SabinGhost19/ztAdminConsole/commit/536cf0666c69f8f63420a824ec8f77795bffe29f))
+
 ## [1.1.5](https://github.com/SabinGhost19/ztAdminConsole/compare/v1.1.4...v1.1.5) (2026-04-17)
 
 
