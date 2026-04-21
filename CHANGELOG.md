@@ -1,3 +1,10 @@
+# [1.4.0](https://github.com/SabinGhost19/ztAdminConsole/compare/v1.3.0...v1.4.0) (2026-04-21)
+
+
+### Features
+
+* **iam:** integrate dynamic IAM web app JIT portal and identity ([cbfca8c](https://github.com/SabinGhost19/ztAdminConsole/commit/cbfca8c63bf66533338c8a8e526db56194a09d64))
+
 # [1.3.0](https://github.com/SabinGhost19/ztAdminConsole/compare/v1.2.3...v1.3.0) (2026-04-21)
 
 
