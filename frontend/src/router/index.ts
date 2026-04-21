@@ -12,6 +12,11 @@ const routes = [
     component: () => import('../views/JitAccess.vue')
   },
   {
+    path: '/iam',
+    name: 'Identity & Access Management',
+    component: () => import('../views/IamManager.vue')
+  },
+  {
     path: '/apps',
     name: 'Applications',
     component: () => import('../views/Apps.vue')

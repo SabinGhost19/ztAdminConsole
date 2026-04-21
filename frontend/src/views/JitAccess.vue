@@ -38,6 +38,16 @@ const form = ref({
 
 const roles = ['view', 'edit', 'admin']
 
+const activeTab = ref('k8s')
+const webApps = ref<any[]>([])
+const isLoadingWebApps = ref(false)
+
+const webForm = ref({
+  appName: '',
+  duration: 60,
+  reason: ''
+})
+
 const isConfirmRevokeOpen = ref(false)
 const sessionToRevoke = ref<JitSession | null>(null)
 const isRevoking = ref(false)
@@ -45,8 +55,21 @@ const isRevoking = ref(false)
 let timerId: ReturnType<typeof setInterval>
 const now = ref(Date.now())
 
+async function fetchWebApps() {
+  isLoadingWebApps.value = true
+  try {
+    const response = await api.get('/jit/web/apps')
+    webApps.value = response.data.apps || []
+  } catch (err) {
+    console.error('Failed to fetch web apps', err)
+  } finally {
+    isLoadingWebApps.value = false
+  }
+}
+
 onMounted(() => {
   jitStore.fetchSessions()
+  fetchWebApps()
   dashboardStore.fetchOverview(true).catch(() => undefined)
   loadJitAdmin().catch(() => undefined)
   timerId = setInterval(() => {
@@ -79,6 +102,33 @@ async function submitRequest() {
     })
   } catch (err) {
     console.error('JIT request failed', err)
+  }
+}
+
+async function submitWebRequest() {
+  if (!webForm.value.appName) return
+  jitStore.isSubmitting = true
+  try {
+    await api.post('/jit/web/request', {
+      app_name: webForm.value.appName,
+      duration: webForm.value.duration
+    })
+    
+    notifyStore.addAlert({
+      error_code: 'WEB_JIT_CREATED',
+      message: `Acces web acordat temporar pentru ${webForm.value.appName}.`,
+      technical_details: `Durată aprobată: ${webForm.value.duration} minute. Refresh pagina (F5) pt a verifica accesul în Ingress.`,
+      component: 'KEYCLOAK_IAM',
+      trace_id: Math.random().toString(36).substring(2),
+      action_required: '',
+      type: 'warning'
+    })
+    // Simulate refreshing active sessions since web sessions are tracked dynamically
+    await jitStore.fetchSessions()
+  } catch (err) {
+    console.error('Web JIT request failed', err)
+  } finally {
+    jitStore.isSubmitting = false
   }
 }
 
@@ -251,66 +301,129 @@ async function savePolicies() {
         <v-card class="gc-border h-100" style="border: 1px solid rgba(var(--v-theme-on-surface), 0.12)" flat>
           <v-card-title class="font-weight-medium pb-2 text-primary">Ephemeral Access Wizard (IAM)</v-card-title>
           <v-card-text>
-            <p class="text-caption text-secondary mb-6">Cerere JIT bazată pe `JITAccessRequest`, cu status și mesaj complet afișate din backend.</p>
+            <p class="text-caption text-secondary mb-4">Alege tipul resursei pentru escaladare temporară a privilegiilor JIT.</p>
             
-            <v-text-field 
-              v-model="form.namespace"
-              density="compact" 
-              label="Target Namespace" 
-              variant="outlined" 
-              placeholder="e.g., default"
-              prepend-inner-icon="mdi-google-cloud"
-              hide-details="auto"
-              class="mb-4"
-            ></v-text-field>
-            
-            <v-select 
-              v-model="form.role"
-              density="compact" 
-              label="Requested Kubernetes Role" 
-              :items="roles" 
-              variant="outlined"
-              prepend-inner-icon="mdi-shield-account-variant"
-              hide-details="auto"
-              class="mb-4"
-            ></v-select>
-            
-            <div class="px-2 mt-6">
-              <div class="text-caption text-secondary mb-1">Duration: {{ form.duration }} minutes</div>
-              <v-slider 
-                v-model="form.duration"
-                color="primary" 
-                min="5" 
-                max="120" 
-                step="5" 
-                thumb-label
-                hide-details
-              ></v-slider>
-            </div>
+            <v-tabs v-model="activeTab" density="compact" color="primary" class="mb-4 text-caption border-b">
+              <v-tab value="k8s" size="small" class="text-none"><v-icon start size="small">mdi-kubernetes</v-icon> K8s RBAC</v-tab>
+              <v-tab value="web" size="small" class="text-none"><v-icon start size="small">mdi-web</v-icon> Web Proxy</v-tab>
+            </v-tabs>
 
-            <v-textarea
-              v-model="form.reason"
-              label="Justificare (SecOps Audit)"
-              variant="outlined"
-              density="compact"
-              rows="2"
-              class="mt-4"
-              hide-details="auto"
-              prepend-inner-icon="mdi-text-box-edit-outline"
-            ></v-textarea>
-            
-            <v-btn 
-              :loading="isSubmitting"
-              @click="submitRequest"
-              color="primary" 
-              block 
-              variant="flat" 
-              elevation="0" 
-              class="mt-6 text-none font-weight-medium"
-              prepend-icon="mdi-shield-key-outline"
-            >
-              Request Access
-            </v-btn>
+            <v-window v-model="activeTab" :touch="false">
+              <!-- Kubernetes RBAC Tab -->
+              <v-window-item value="k8s">
+                <v-text-field 
+                  v-model="form.namespace"
+                  density="compact" 
+                  label="Target Namespace" 
+                  variant="outlined" 
+                  placeholder="e.g., default"
+                  prepend-inner-icon="mdi-google-cloud"
+                  hide-details="auto"
+                  class="mb-4 mt-2"
+                ></v-text-field>
+                
+                <v-select 
+                  v-model="form.role"
+                  density="compact" 
+                  label="Requested Kubernetes Role" 
+                  :items="roles" 
+                  variant="outlined"
+                  prepend-inner-icon="mdi-shield-account-variant"
+                  hide-details="auto"
+                  class="mb-4"
+                ></v-select>
+                
+                <div class="px-2 mt-6">
+                  <div class="text-caption text-secondary mb-1">Duration: {{ form.duration }} minutes</div>
+                  <v-slider 
+                    v-model="form.duration"
+                    color="primary" 
+                    min="5" 
+                    max="120" 
+                    step="5" 
+                    thumb-label
+                    hide-details
+                  ></v-slider>
+                </div>
+
+                <v-textarea
+                  v-model="form.reason"
+                  label="Justificare (SecOps Audit)"
+                  variant="outlined"
+                  density="compact"
+                  rows="2"
+                  class="mt-4"
+                  hide-details="auto"
+                  prepend-inner-icon="mdi-text-box-edit-outline"
+                ></v-textarea>
+                
+                <v-btn 
+                  :loading="isSubmitting"
+                  @click="submitRequest"
+                  color="primary" 
+                  block 
+                  variant="flat" 
+                  elevation="0" 
+                  class="mt-6 text-none font-weight-medium"
+                  prepend-icon="mdi-shield-key-outline"
+                >
+                  Request K8S Access
+                </v-btn>
+              </v-window-item>
+
+              <!-- Web App Tab -->
+              <v-window-item value="web">
+                <v-select 
+                  v-model="webForm.appName"
+                  density="compact" 
+                  label="Target Web Application" 
+                  :items="webApps.map(a => a.name)" 
+                  variant="outlined"
+                  prepend-inner-icon="mdi-application-brackets-outline"
+                  hide-details="auto"
+                  class="mb-4 mt-2"
+                  :loading="isLoadingWebApps"
+                ></v-select>
+
+                <div class="px-2 mt-6">
+                  <div class="text-caption text-secondary mb-1">Duration: {{ webForm.duration }} minutes</div>
+                  <v-slider 
+                    v-model="webForm.duration"
+                    color="primary" 
+                    min="5" 
+                    max="480" 
+                    step="15" 
+                    thumb-label
+                    hide-details
+                  ></v-slider>
+                </div>
+
+                <v-textarea
+                  v-model="webForm.reason"
+                  label="Justificare (SecOps Audit)"
+                  variant="outlined"
+                  density="compact"
+                  rows="2"
+                  class="mt-4"
+                  hide-details="auto"
+                  prepend-inner-icon="mdi-text-box-edit-outline"
+                ></v-textarea>
+
+                <v-btn 
+                  :loading="isSubmitting"
+                  @click="submitWebRequest"
+                  color="primary" 
+                  block 
+                  variant="flat" 
+                  elevation="0" 
+                  class="mt-6 text-none font-weight-medium"
+                  prepend-icon="mdi-web-check"
+                  :disabled="!webForm.appName"
+                >
+                  Request Ingress Access
+                </v-btn>
+              </v-window-item>
+            </v-window>
 
             <v-expand-transition>
               <div v-if="generatedCommand" class="mt-4">

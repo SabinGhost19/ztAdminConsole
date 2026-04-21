@@ -65,6 +65,7 @@ watch(errorCenterOpen, (open) => {
 const menuItems = [
   { title: 'Overview', icon: 'mdi-google-circles-extended', path: '/' },
   { title: 'JIT Access', icon: 'mdi-shield-account-outline', path: '/jit' },
+  { title: 'Identities (IAM)', icon: 'mdi-account-group', path: '/iam' },
   { title: 'ZTA Builder', icon: 'mdi-cube-outline', path: '/apps' },
   { title: 'Secret Vault', icon: 'mdi-lock-pattern', path: '/secrets' },
   { title: 'Supply Chain (SCA)', icon: 'mdi-shield-link-variant', path: '/sca' },

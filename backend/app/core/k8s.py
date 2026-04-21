@@ -46,5 +46,7 @@ def get_custom_api():
 
 
 def get_core_api():
-    """Returnează o instanță async a CoreV1Api."""
     return client.CoreV1Api(_get_api_client())
+
+def get_networking_api():
+    return client.NetworkingV1Api(_get_api_client())
