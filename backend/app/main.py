@@ -60,6 +60,40 @@ async def require_identity_header(request: Request, call_next):
     )
     return response
 
+import asyncio
+from datetime import datetime, timezone
+import sqlite3
+from app.services.keycloak_service import revoke_jit_access as kc_revoke
+
+background_tasks = set()
+
+async def jit_gc_task():
+    while True:
+        try:
+            from app.core.state_db import _conn, _lock, delete_state
+            if _conn:
+                with _lock:
+                    cur = _conn.cursor()
+                    cur.execute("SELECT cache_key, payload_json FROM state_cache WHERE state_type = 'web_jit_session'")
+                    rows = cur.fetchall()
+                
+                now = datetime.now(timezone.utc)
+                for row in rows:
+                    cache_key = row[0]
+                    import json
+                    payload = json.loads(row[1])
+                    expires_at_str = payload.get("expires_at")
+                    if expires_at_str:
+                        expires_at = datetime.fromisoformat(expires_at_str)
+                        if now >= expires_at:
+                            logger.info(f"Web JIT session {cache_key} expired. Revoking...")
+                            kc_revoke(payload["email"], payload["app_name"])
+                            delete_state(cache_key)
+        except Exception as e:
+            logger.error(f"Eroare in JIT GC task: {e}")
+        
+        await asyncio.sleep(60)
+
 @app.on_event("startup")
 async def startup_event():
     # Inițializează clientul k8s async la pornirea serverului.
@@ -68,6 +102,11 @@ async def startup_event():
     init_state_db()
     logger.info("Initialized in-memory SQLite state cache")
     logger.info("Kubernetes async client initialized successfully")
+    
+    # Start garbage collection background task
+    task = asyncio.create_task(jit_gc_task())
+    background_tasks.add(task)
+    task.add_done_callback(background_tasks.discard)
 
 
 @app.on_event("shutdown")
