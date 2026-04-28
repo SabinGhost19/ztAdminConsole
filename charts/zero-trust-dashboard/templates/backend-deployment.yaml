@@ -38,5 +38,17 @@ spec:
               port: http
             initialDelaySeconds: 5
             periodSeconds: 10
+          env:
+            - name: KEYCLOAK_URL
+              value: "http://keycloak.platform-identity.svc.cluster.local/"
+            - name: KEYCLOAK_REALM
+              value: "ZeroTrust-Realm"
+            - name: KEYCLOAK_CLIENT_ID
+              value: "jit-backend-api"
+            - name: KEYCLOAK_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: jit-backend-keycloak
+                  key: client-secret
           resources:
             {{- toYaml .Values.backend.resources | nindent 12 }}

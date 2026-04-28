@@ -28,6 +28,9 @@ backend:
       cpu: 100m
       memory: 128Mi
 
+keycloak:
+  clientSecret: "ChangeMe-JITBackend-2026!"
+
 ingress:
   enabled: true
   className: "nginx"
