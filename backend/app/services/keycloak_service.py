@@ -105,3 +105,79 @@ def revoke_jit_access(email: str, app_name: str) -> bool:
     except Exception as e:
         logger.error(f"System error revoking access: {e}")
         return False
+
+# --- Phase 4b: Group Management Functions ---
+
+def list_all_groups() -> list[dict]:
+    """List all groups in the realm"""
+    try:
+        admin = _get_admin()
+        groups = admin.get_groups()
+        return groups
+    except Exception as e:
+        logger.error(f"Error listing groups: {e}")
+        return []
+
+def create_group_keycloak(name: str, description: str = "") -> str:
+    """Create a new group, return its ID"""
+    try:
+        admin = _get_admin()
+        group_data = {"name": name}
+        if description:
+            group_data["attributes"] = {"description": [description]}
+        
+        admin.create_group(group_data)
+        
+        # Reload to get ID
+        groups = admin.get_groups()
+        for g in groups:
+            if g.get("name") == name:
+                logger.info(f"Created group {name} with ID {g.get('id')}")
+                return g.get("id")
+        
+        raise ValueError(f"Could not find created group {name}")
+    except KeycloakError as e:
+        logger.error(f"Keycloak error creating group: {e}")
+        raise
+    except Exception as e:
+        logger.error(f"System error creating group: {e}")
+        raise
+
+def get_user_groups(user_id: str) -> list[dict]:
+    """Get all groups a user belongs to"""
+    try:
+        admin = _get_admin()
+        groups = admin.get_user_groups(user_id)
+        return groups
+    except Exception as e:
+        logger.error(f"Error getting user groups for {user_id}: {e}")
+        return []
+
+def add_user_to_group_keycloak(user_id: str, group_id: str) -> bool:
+    """Add a user to a group"""
+    try:
+        admin = _get_admin()
+        admin.group_user_add(user_id=user_id, group_id=group_id)
+        logger.info(f"Added user {user_id} to group {group_id}")
+        return True
+    except KeycloakError as e:
+        logger.error(f"Keycloak error adding user to group: {e}")
+        return False
+    except Exception as e:
+        logger.error(f"System error adding user to group: {e}")
+        return False
+
+def remove_user_from_group_keycloak(user_id: str, group_id: str) -> bool:
+    """Remove a user from a group"""
+    try:
+        admin = _get_admin()
+        admin.group_user_remove(user_id=user_id, group_id=group_id)
+        logger.info(f"Removed user {user_id} from group {group_id}")
+        return True
+    except KeycloakError as e:
+        logger.error(f"Keycloak error removing user from group: {e}")
+        return False
+    except Exception as e:
+        logger.error(f"System error removing user from group: {e}")
+        return False
+

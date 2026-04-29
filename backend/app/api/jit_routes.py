@@ -143,3 +143,97 @@ async def list_iam_users():
     admin = _get_admin()
     users = admin.get_users()
     return {"status": "success", "users": users}
+
+# --- Phase 4b: IAM Groups Management ---
+
+class GroupCreateIn(BaseModel):
+    name: str = Field(..., title="Numelul grupului (ex: jit-access-database)")
+    description: str = Field("", title="Descrierea grupului")
+
+class UserGroupAssignIn(BaseModel):
+    group_id: str = Field(..., title="ID-ul grupului")
+
+@router.get("/iam/groups", response_model=Dict[str, Any])
+async def list_iam_groups():
+    """List all groups in the realm"""
+    from app.services.keycloak_service import list_all_groups
+    groups = list_all_groups()
+    return {"status": "success", "groups": groups}
+
+@router.post("/iam/groups", response_model=Dict[str, Any])
+async def create_iam_group(data: GroupCreateIn):
+    """Create a new group in Keycloak"""
+    from app.services.keycloak_service import create_group_keycloak
+    group_id = create_group_keycloak(data.name, data.description)
+    return {"status": "success", "group_id": group_id, "name": data.name}
+
+@router.get("/iam/users/{user_id}/groups", response_model=Dict[str, Any])
+async def list_user_groups(user_id: str):
+    """List all groups a user belongs to"""
+    from app.services.keycloak_service import get_user_groups
+    groups = get_user_groups(user_id)
+    return {"status": "success", "groups": groups}
+
+@router.put("/iam/users/{user_id}/groups/{group_id}", response_model=Dict[str, Any])
+async def add_user_to_group(user_id: str, group_id: str):
+    """Add a user to a group"""
+    from app.services.keycloak_service import add_user_to_group_keycloak
+    success = add_user_to_group_keycloak(user_id, group_id)
+    if not success:
+        raise HTTPException(status_code=500, detail="Failed to add user to group")
+    return {"status": "success", "message": f"User {user_id} added to group {group_id}"}
+
+@router.delete("/iam/users/{user_id}/groups/{group_id}", response_model=Dict[str, Any])
+async def remove_user_from_group(user_id: str, group_id: str):
+    """Remove a user from a group"""
+    from app.services.keycloak_service import remove_user_from_group_keycloak
+    success = remove_user_from_group_keycloak(user_id, group_id)
+    if not success:
+        raise HTTPException(status_code=500, detail="Failed to remove user from group")
+    return {"status": "success", "message": f"User {user_id} removed from group {group_id}"}
+
+# --- Phase 5: JIT Sessions State Machine ---
+
+class JitSessionState(BaseModel):
+    session_id: str
+    user_email: str
+    app_name: str
+    state: str  # "PENDING" | "ACTIVE" | "EXPIRED" | "REVOKED"
+    requested_at: str  # ISO timestamp
+    expires_at: str    # ISO timestamp
+    approved_by: str = None  # admin email who approved
+    reason: str = None  # revocation reason
+
+@router.get("/sessions/state", response_model=Dict[str, Any])
+async def list_jit_sessions_state(request: Request):
+    """List all active JIT sessions with their state"""
+    from app.services.jit_state_service import get_active_sessions
+    sessions = get_active_sessions()
+    return {"status": "success", "sessions": sessions}
+
+@router.post("/sessions/{session_id}/approve", response_model=Dict[str, Any])
+async def approve_jit_session(session_id: str, request: Request):
+    """Approve a PENDING JIT session (admin only)"""
+    approver = request.headers.get("X-Forwarded-Email")
+    from app.services.jit_state_service import approve_session
+    success = approve_session(session_id, approver)
+    if not success:
+        raise HTTPException(status_code=404, detail="Session not found or not in PENDING state")
+    return {"status": "success", "message": f"Session {session_id} approved"}
+
+@router.delete("/sessions/{session_id}/revoke", response_model=Dict[str, Any])
+async def revoke_jit_session_explicit(session_id: str, request: Request):
+    """Revoke an active JIT session"""
+    revoker = request.headers.get("X-Forwarded-Email")
+    from app.services.jit_state_service import revoke_session_explicit
+    success = revoke_session_explicit(session_id, revoker)
+    if not success:
+        raise HTTPException(status_code=404, detail="Session not found or already expired")
+    return {"status": "success", "message": f"Session {session_id} revoked"}
+
+@router.get("/sessions/stats", response_model=Dict[str, Any])
+async def get_jit_sessions_stats():
+    """Get statistics on JIT sessions"""
+    from app.services.jit_state_service import get_session_stats
+    stats = get_session_stats()
+    return {"status": "success", "stats": stats}

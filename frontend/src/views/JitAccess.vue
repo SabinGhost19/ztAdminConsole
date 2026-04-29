@@ -52,8 +52,71 @@ const isConfirmRevokeOpen = ref(false)
 const sessionToRevoke = ref<JitSession | null>(null)
 const isRevoking = ref(false)
 
+// Phase 5: JIT Sessions State Management
+const jitSessions = ref<any[]>([])
+const jitSessionStats = ref<any | null>(null)
+const isLoadingSessions = ref(false)
+const isApprovingSession = ref(false)
+
 let timerId: ReturnType<typeof setInterval>
 const now = ref(Date.now())
+
+async function fetchJitSessions() {
+  isLoadingSessions.value = true
+  try {
+    const response = await api.get('/jit/sessions/state')
+    jitSessions.value = response.data.sessions || []
+    const statsResponse = await api.get('/jit/sessions/stats')
+    jitSessionStats.value = statsResponse.data.stats || {}
+  } catch (err) {
+    console.error('Failed to fetch JIT sessions', err)
+  } finally {
+    isLoadingSessions.value = false
+  }
+}
+
+async function approveJitSession(sessionId: string) {
+  isApprovingSession.value = true
+  try {
+    await api.post(`/jit/sessions/${sessionId}/approve`)
+    notifyStore.addAlert({
+      error_code: 'SESSION_APPROVED',
+      message: `Session ${sessionId} approved.`,
+      technical_details: `The user can now access their requested resource.`,
+      component: 'JIT_MODULE',
+      trace_id: Math.random().toString(36).substring(2),
+      action_required: '',
+      type: 'warning'
+    })
+    await fetchJitSessions()
+  } catch (err) {
+    console.error('Failed to approve session', err)
+  } finally {
+    isApprovingSession.value = false
+  }
+}
+
+async function revokeJitSessionExplicit(sessionId: string) {
+  isRevoking.value = true
+  try {
+    await api.delete(`/jit/sessions/${sessionId}/revoke`)
+    notifyStore.addAlert({
+      error_code: 'SESSION_REVOKED',
+      message: `Session ${sessionId} revoked.`,
+      technical_details: `The user's access has been immediately revoked.`,
+      component: 'JIT_MODULE',
+      trace_id: Math.random().toString(36).substring(2),
+      action_required: '',
+      type: 'error'
+    })
+    await fetchJitSessions()
+  } catch (err) {
+    console.error('Failed to revoke session', err)
+  } finally {
+    isRevoking.value = false
+    isConfirmRevokeOpen.value = false
+  }
+}
 
 async function fetchWebApps() {
   isLoadingWebApps.value = true
@@ -70,6 +133,7 @@ async function fetchWebApps() {
 onMounted(() => {
   jitStore.fetchSessions()
   fetchWebApps()
+  fetchJitSessions()
   dashboardStore.fetchOverview(true).catch(() => undefined)
   loadJitAdmin().catch(() => undefined)
   timerId = setInterval(() => {
@@ -306,6 +370,7 @@ async function savePolicies() {
             <v-tabs v-model="activeTab" density="compact" color="primary" class="mb-4 text-caption border-b">
               <v-tab value="k8s" size="small" class="text-none"><v-icon start size="small">mdi-kubernetes</v-icon> K8s RBAC</v-tab>
               <v-tab value="web" size="small" class="text-none"><v-icon start size="small">mdi-web</v-icon> Web Proxy</v-tab>
+              <v-tab value="sessions" size="small" class="text-none"><v-icon start size="small">mdi-clock-check</v-icon> Sessions</v-tab>
             </v-tabs>
 
             <v-window v-model="activeTab" :touch="false">
@@ -422,6 +487,75 @@ async function savePolicies() {
                 >
                   Request Ingress Access
                 </v-btn>
+              </v-window-item>
+
+              <!-- Sessions State Tab -->
+              <v-window-item value="sessions">
+                <div class="mt-4">
+                  <div class="d-flex justify-space-between align-center mb-4">
+                    <h3 class="text-subtitle-2 font-weight-medium">Active Sessions</h3>
+                    <v-btn size="small" variant="text" color="primary" prepend-icon="mdi-refresh" @click="fetchJitSessions" :loading="isLoadingSessions">
+                      Refresh
+                    </v-btn>
+                  </div>
+
+                  <!-- Session Stats -->
+                  <div v-if="jitSessionStats" class="d-grid gap-2 mb-4" style="grid-template-columns: repeat(auto-fit, minmax(120px, 1fr))">
+                    <v-card variant="outlined" class="pa-3 text-center">
+                      <div class="text-h6 font-weight-bold text-primary">{{ jitSessionStats.total_sessions }}</div>
+                      <div class="text-caption text-secondary">Total Sessions</div>
+                    </v-card>
+                    <v-card variant="outlined" class="pa-3 text-center">
+                      <div class="text-h6 font-weight-bold text-warning">{{ jitSessionStats.pending }}</div>
+                      <div class="text-caption text-secondary">Pending</div>
+                    </v-card>
+                    <v-card variant="outlined" class="pa-3 text-center">
+                      <div class="text-h6 font-weight-bold text-success">{{ jitSessionStats.active }}</div>
+                      <div class="text-caption text-secondary">Active</div>
+                    </v-card>
+                    <v-card variant="outlined" class="pa-3 text-center">
+                      <div class="text-h6 font-weight-bold text-error">{{ jitSessionStats.expired }}</div>
+                      <div class="text-caption text-secondary">Expired</div>
+                    </v-card>
+                  </div>
+
+                  <!-- Sessions List -->
+                  <v-skeleton-loader v-if="isLoadingSessions" type="table"></v-skeleton-loader>
+
+                  <div v-else-if="jitSessions.length > 0" class="space-y-2">
+                    <v-card v-for="session in jitSessions" :key="session.session_id" variant="outlined" class="pa-3">
+                      <div class="d-flex justify-space-between align-center">
+                        <div class="flex-grow-1">
+                          <div class="text-body-2 font-weight-medium">{{ session.user_email }}</div>
+                          <div class="text-caption text-secondary">{{ session.app_name }} • {{ session.state }}</div>
+                          <div class="text-caption text-secondary mt-1">{{ new Date(session.requested_at).toLocaleString() }}</div>
+                        </div>
+                        <div class="text-right">
+                          <v-chip :color="session.state === 'PENDING' ? 'warning' : session.state === 'ACTIVE' ? 'success' : 'error'" size="small" variant="flat" class="mb-2">
+                            {{ session.state }}
+                          </v-chip>
+                          <div v-if="session.state === 'PENDING'" class="d-flex gap-1">
+                            <v-btn size="x-small" variant="flat" color="success" @click="approveJitSession(session.session_id)" :loading="isApprovingSession">
+                              Approve
+                            </v-btn>
+                            <v-btn size="x-small" variant="flat" color="error" @click="() => { sessionToRevoke = session; isConfirmRevokeOpen = true }">
+                              Deny
+                            </v-btn>
+                          </div>
+                          <div v-else-if="session.state === 'ACTIVE'" class="d-flex gap-1">
+                            <v-btn size="x-small" variant="flat" color="error" @click="() => { sessionToRevoke = session; isConfirmRevokeOpen = true }">
+                              Revoke
+                            </v-btn>
+                          </div>
+                        </div>
+                      </div>
+                    </v-card>
+                  </div>
+
+                  <div v-else class="text-center text-secondary py-4">
+                    No JIT sessions yet.
+                  </div>
+                </div>
               </v-window-item>
             </v-window>
 

@@ -101,6 +101,11 @@ async def startup_event():
     await init_k8s()
     init_state_db()
     logger.info("Initialized in-memory SQLite state cache")
+    
+    # Initialize background scheduler for periodic tasks
+    from app.core.background_tasks import init_background_scheduler
+    init_background_scheduler()
+    
     logger.info("Kubernetes async client initialized successfully")
     
     # Start garbage collection background task
@@ -115,6 +120,11 @@ async def shutdown_event():
     await close_k8s()
     close_state_db()
     logger.info("Closed in-memory SQLite state cache")
+    
+    # Shutdown background scheduler
+    from app.core.background_tasks import shutdown_background_scheduler
+    shutdown_background_scheduler()
+    
     logger.info("Kubernetes async client closed successfully")
 
 @app.get("/api/v1/health", tags=["System"])

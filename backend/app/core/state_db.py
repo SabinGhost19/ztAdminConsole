@@ -233,3 +233,71 @@ def delete_state(cache_key: str) -> None:
             return
         _conn.execute("DELETE FROM state_cache WHERE cache_key = ?", (cache_key,))
         _conn.commit()
+
+
+def list_state_by_type(state_type: str) -> list[dict[str, Any]]:
+    """List all state entries of a given type, with their payloads"""
+    with _lock:
+        if _conn is None:
+            return []
+        rows = _conn.execute(
+            """
+            SELECT
+              cache_key,
+              namespace,
+              resource_name,
+              state_type,
+              state_version,
+              status,
+              fingerprint,
+              payload_json,
+              metadata_json,
+              updated_at,
+              accessed_at
+            FROM state_cache
+            WHERE state_type = ?
+            ORDER BY updated_at DESC
+            """,
+            (state_type,),
+        ).fetchall()
+        
+        results = []
+        for row in rows:
+            payload = json.loads(str(row[7]))
+            results.append(payload)
+        
+        return results
+
+
+def list_state_by_namespace(namespace: str) -> list[dict[str, Any]]:
+    """List all state entries in a given namespace, with their payloads"""
+    with _lock:
+        if _conn is None:
+            return []
+        rows = _conn.execute(
+            """
+            SELECT
+              cache_key,
+              namespace,
+              resource_name,
+              state_type,
+              state_version,
+              status,
+              fingerprint,
+              payload_json,
+              metadata_json,
+              updated_at,
+              accessed_at
+            FROM state_cache
+            WHERE namespace = ?
+            ORDER BY updated_at DESC
+            """,
+            (namespace,),
+        ).fetchall()
+        
+        results = []
+        for row in rows:
+            payload = json.loads(str(row[7]))
+            results.append(payload)
+        
+        return results
