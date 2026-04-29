@@ -294,8 +294,3 @@ onMounted(() => {
     </v-dialog>
   </v-container>
 </template>
-        </v-table>
-      </v-card-text>
-    </v-card>
-  </v-container>
-</template>
