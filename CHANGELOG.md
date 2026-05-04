@@ -1,3 +1,10 @@
+# [1.5.0](https://github.com/SabinGhost19/ztAdminConsole/compare/v1.4.0...v1.5.0) (2026-05-04)
+
+
+### Features
+
+* **zta-helm:** expose ingress/JIT auth defaults in values and deployment env ([b2b4914](https://github.com/SabinGhost19/ztAdminConsole/commit/b2b49149870380b12f8d8ebbf3f4f0ce5f832e37))
+
 # [1.4.0](https://github.com/SabinGhost19/ztAdminConsole/compare/v1.3.0...v1.4.0) (2026-04-21)
 
 
