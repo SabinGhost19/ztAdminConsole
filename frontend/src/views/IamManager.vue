@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { computed, ref, onMounted } from 'vue'
 import { api } from '../api/axios'
+import { useNotificationStore } from '../store/notification'
 
 interface User {
   id: string
@@ -27,17 +28,50 @@ const isLoading = ref(true)
 const currentTab = ref('users')
 const selectedUser = ref<UserWithGroups | null>(null)
 const showUserDetails = ref(false)
-const showCreateGroupDialog = ref(false)
-const newGroupName = ref('')
-const newGroupDescription = ref('')
+const userSearch = ref('')
+const groupSearch = ref('')
+
+const showGroupDialog = ref(false)
+const isEditingGroup = ref(false)
+const groupForm = ref({
+  id: '',
+  name: '',
+  description: ''
+})
+const showDeleteGroupDialog = ref(false)
+const groupToDelete = ref<Group | null>(null)
+
+const showUserStatusDialog = ref(false)
+const pendingUserStatus = ref(true)
+const notifyStore = useNotificationStore()
+
+function notifyError(error: any, fallbackMessage: string) {
+  const data = error?.response?.data || {}
+  const traceId = data.trace_id || data.traceId || `UI-${Math.random().toString(36).substring(2)}`
+  notifyStore.addAlert({
+    error_code: data.error_code || 'IAM_UI_ERROR',
+    message: data.message || fallbackMessage,
+    technical_details: data.technical_details || error?.message || 'Unknown error',
+    component: data.component || 'IAM_MODULE',
+    trace_id: traceId,
+    action_required: data.action_required || 'Verifica detaliile si reincearca.',
+    status_code: data.status_code || error?.response?.status,
+    request_method: data.request_method || error?.config?.method?.toUpperCase(),
+    request_path: data.request_path || error?.config?.url,
+    timestamp: data.timestamp || new Date().toISOString(),
+    source: 'backend',
+    details: data.details || null,
+    type: 'error'
+  })
+}
 
 async function fetchUsers() {
   isLoading.value = true
   try {
-    const response = await api.get('/jit/iam/users')
+    const response = await api.get('/jit/iam/users', { skipGlobalErrorAlert: true })
     users.value = response.data.users || []
   } catch (error) {
-    console.error('Failed to fetch IAM users', error)
+    notifyError(error, 'Nu pot incarca lista de utilizatori.')
   } finally {
     isLoading.value = false
   }
@@ -46,10 +80,10 @@ async function fetchUsers() {
 async function fetchGroups() {
   isLoading.value = true
   try {
-    const response = await api.get('/jit/iam/groups')
+    const response = await api.get('/jit/iam/groups', { skipGlobalErrorAlert: true })
     groups.value = response.data.groups || []
   } catch (error) {
-    console.error('Failed to fetch IAM groups', error)
+    notifyError(error, 'Nu pot incarca lista de grupuri.')
   } finally {
     isLoading.value = false
   }
@@ -57,10 +91,10 @@ async function fetchGroups() {
 
 async function fetchUserGroups(userId: string) {
   try {
-    const response = await api.get(`/jit/iam/users/${userId}/groups`)
+    const response = await api.get(`/jit/iam/users/${userId}/groups`, { skipGlobalErrorAlert: true })
     return response.data.groups || []
   } catch (error) {
-    console.error(`Failed to fetch groups for user ${userId}`, error)
+    notifyError(error, `Nu pot incarca grupurile pentru user ${userId}.`)
     return []
   }
 }
@@ -72,44 +106,130 @@ async function viewUserDetails(user: User) {
   showUserDetails.value = true
 }
 
-async function createGroup() {
-  if (!newGroupName.value.trim()) return
-  
+function openCreateGroupDialog() {
+  isEditingGroup.value = false
+  groupForm.value = { id: '', name: '', description: '' }
+  showGroupDialog.value = true
+}
+
+function openEditGroupDialog(group: Group) {
+  isEditingGroup.value = true
+  groupForm.value = {
+    id: group.id,
+    name: group.name,
+    description: group.attributes?.description?.[0] || ''
+  }
+  showGroupDialog.value = true
+}
+
+async function saveGroup() {
+  if (!groupForm.value.name.trim()) return
+
   try {
-    await api.post('/jit/iam/groups', {
-      name: newGroupName.value,
-      description: newGroupDescription.value,
-    })
-    newGroupName.value = ''
-    newGroupDescription.value = ''
-    showCreateGroupDialog.value = false
+    if (isEditingGroup.value) {
+      await api.put(`/jit/iam/groups/${groupForm.value.id}`, {
+        name: groupForm.value.name,
+        description: groupForm.value.description,
+      }, { skipGlobalErrorAlert: true })
+    } else {
+      await api.post('/jit/iam/groups', {
+        name: groupForm.value.name,
+        description: groupForm.value.description,
+      }, { skipGlobalErrorAlert: true })
+    }
+    showGroupDialog.value = false
     await fetchGroups()
   } catch (error) {
-    console.error('Failed to create group', error)
+    notifyError(error, 'Nu pot salva grupul. Verifica datele si permisiunile.')
+  }
+}
+
+function promptDeleteGroup(group: Group) {
+  groupToDelete.value = group
+  showDeleteGroupDialog.value = true
+}
+
+async function deleteGroup() {
+  if (!groupToDelete.value) return
+
+  try {
+    await api.delete(`/jit/iam/groups/${groupToDelete.value.id}`, { skipGlobalErrorAlert: true })
+    await fetchGroups()
+  } catch (error) {
+    notifyError(error, 'Nu pot sterge grupul selectat.')
+  } finally {
+    showDeleteGroupDialog.value = false
+    groupToDelete.value = null
   }
 }
 
 async function addUserToGroup(userId: string, groupId: string) {
   try {
-    await api.put(`/jit/iam/users/${userId}/groups/${groupId}`)
+    await api.put(`/jit/iam/users/${userId}/groups/${groupId}`, {}, { skipGlobalErrorAlert: true })
     if (selectedUser.value) {
       selectedUser.value.groups = await fetchUserGroups(userId)
     }
   } catch (error) {
-    console.error('Failed to add user to group', error)
+    notifyError(error, 'Nu pot adauga userul in grupul selectat.')
   }
 }
 
 async function removeUserFromGroup(userId: string, groupId: string) {
   try {
-    await api.delete(`/jit/iam/users/${userId}/groups/${groupId}`)
+    await api.delete(`/jit/iam/users/${userId}/groups/${groupId}`, { skipGlobalErrorAlert: true })
     if (selectedUser.value) {
       selectedUser.value.groups = await fetchUserGroups(userId)
     }
   } catch (error) {
-    console.error('Failed to remove user from group', error)
+    notifyError(error, 'Nu pot elimina userul din grup.')
   }
 }
+
+function promptUserStatusChange(enabled: boolean) {
+  pendingUserStatus.value = enabled
+  showUserStatusDialog.value = true
+}
+
+async function updateUserStatus() {
+  if (!selectedUser.value) return
+
+  try {
+    await api.put(`/jit/iam/users/${selectedUser.value.id}/status`, {
+      enabled: pendingUserStatus.value,
+    }, { skipGlobalErrorAlert: true })
+    selectedUser.value.enabled = pendingUserStatus.value
+    const index = users.value.findIndex((item) => item.id === selectedUser.value?.id)
+    if (index >= 0) {
+      users.value[index].enabled = pendingUserStatus.value
+    }
+  } catch (error) {
+    notifyError(error, 'Nu pot actualiza statusul utilizatorului.')
+  } finally {
+    showUserStatusDialog.value = false
+  }
+}
+
+const filteredUsers = computed(() => {
+  const query = userSearch.value.trim().toLowerCase()
+  if (!query) return users.value
+  return users.value.filter((user) => {
+    const fullName = `${user.firstName || ''} ${user.lastName || ''}`.trim().toLowerCase()
+    return (
+      user.username?.toLowerCase().includes(query) ||
+      user.email?.toLowerCase().includes(query) ||
+      fullName.includes(query)
+    )
+  })
+})
+
+const filteredGroups = computed(() => {
+  const query = groupSearch.value.trim().toLowerCase()
+  if (!query) return groups.value
+  return groups.value.filter((group) => {
+    const description = group.attributes?.description?.[0]?.toLowerCase() || ''
+    return group.name.toLowerCase().includes(query) || description.includes(query)
+  })
+})
 
 onMounted(() => {
   fetchUsers()
@@ -147,6 +267,18 @@ onMounted(() => {
         </v-tabs>
 
         <!-- USERS TAB -->
+        <div v-if="currentTab === 'users'" class="d-flex flex-wrap align-center gap-4 mb-4">
+          <v-text-field
+            v-model="userSearch"
+            label="Search users"
+            prepend-icon="mdi-magnify"
+            variant="outlined"
+            density="compact"
+            hide-details
+            style="max-width: 320px"
+          ></v-text-field>
+          <v-chip variant="tonal" color="primary" class="text-caption">{{ filteredUsers.length }} users</v-chip>
+        </div>
         <v-skeleton-loader v-if="isLoading && currentTab === 'users'" type="table"></v-skeleton-loader>
         
         <v-table v-else-if="currentTab === 'users'" density="comfortable" class="border rounded" hover>
@@ -160,7 +292,7 @@ onMounted(() => {
             </tr>
           </thead>
           <tbody>
-            <tr v-for="user in users" :key="user.id" class="cursor-pointer hover:bg-surface-variant transition-colors">
+            <tr v-for="user in filteredUsers" :key="user.id" class="cursor-pointer hover:bg-surface-variant transition-colors">
               <td class="font-weight-medium">{{ user.username }}</td>
               <td>{{ user.firstName }} {{ user.lastName }}</td>
               <td class="text-secondary">{{ user.email }}</td>
@@ -176,7 +308,7 @@ onMounted(() => {
                 </v-btn>
               </td>
             </tr>
-            <tr v-if="users.length === 0">
+            <tr v-if="filteredUsers.length === 0">
               <td colspan="5" class="text-center text-secondary py-4">Nu am găsit utilizatori sincronizați.</td>
             </tr>
           </tbody>
@@ -184,14 +316,26 @@ onMounted(() => {
 
         <!-- GROUPS TAB -->
         <div v-if="currentTab === 'groups'" class="mt-4">
-          <v-btn color="primary" prepend-icon="mdi-plus" @click="showCreateGroupDialog = true" class="mb-4">
-            Create Group
-          </v-btn>
+          <div class="d-flex flex-wrap align-center gap-4 mb-4">
+            <v-btn color="primary" prepend-icon="mdi-plus" @click="openCreateGroupDialog">
+              Create Group
+            </v-btn>
+            <v-text-field
+              v-model="groupSearch"
+              label="Search groups"
+              prepend-icon="mdi-magnify"
+              variant="outlined"
+              density="compact"
+              hide-details
+              style="max-width: 320px"
+            ></v-text-field>
+            <v-chip variant="tonal" color="primary" class="text-caption">{{ filteredGroups.length }} groups</v-chip>
+          </div>
 
           <v-skeleton-loader v-if="isLoading" type="card"></v-skeleton-loader>
 
           <div v-else class="d-grid gap-4" style="grid-template-columns: repeat(auto-fill, minmax(250px, 1fr))">
-            <v-card v-for="group in groups" :key="group.id" class="gc-border">
+            <v-card v-for="group in filteredGroups" :key="group.id" class="gc-border">
               <v-card-title class="d-flex align-center justify-space-between">
                 <span class="text-truncate">{{ group.name }}</span>
                 <v-icon size="small" color="primary">mdi-account-multiple</v-icon>
@@ -203,14 +347,17 @@ onMounted(() => {
                 <p v-else class="text-caption text-secondary mb-0">No description</p>
               </v-card-text>
               <v-card-actions>
-                <v-btn size="small" variant="text" color="secondary" @click="() => {}">
-                  View Details
+                <v-btn size="small" variant="text" color="primary" @click="openEditGroupDialog(group)">
+                  Edit
+                </v-btn>
+                <v-btn size="small" variant="text" color="error" @click="promptDeleteGroup(group)">
+                  Delete
                 </v-btn>
               </v-card-actions>
             </v-card>
           </div>
 
-          <p v-if="!isLoading && groups.length === 0" class="text-center text-secondary py-4">
+          <p v-if="!isLoading && filteredGroups.length === 0" class="text-center text-secondary py-4">
             No groups yet. Create one to get started.
           </p>
         </div>
@@ -218,7 +365,7 @@ onMounted(() => {
     </v-card>
 
     <!-- User Details Dialog -->
-    <v-dialog v-model="showUserDetails" max-width="600">
+    <v-dialog v-model="showUserDetails" max-width="640">
       <v-card v-if="selectedUser" class="gc-border">
         <v-card-title class="d-flex align-center">
           <v-icon start color="primary">mdi-account</v-icon>
@@ -229,6 +376,17 @@ onMounted(() => {
             <p class="mb-1"><strong>Username:</strong> {{ selectedUser.username }}</p>
             <p class="mb-1"><strong>Email:</strong> {{ selectedUser.email }}</p>
             <p><strong>Status:</strong> {{ selectedUser.enabled ? 'Active' : 'Disabled' }}</p>
+          </div>
+
+          <div class="d-flex align-center gap-2 mb-2">
+            <v-btn
+              size="small"
+              variant="tonal"
+              :color="selectedUser.enabled ? 'error' : 'success'"
+              @click="promptUserStatusChange(!selectedUser.enabled)"
+            >
+              {{ selectedUser.enabled ? 'Disable User' : 'Enable User' }}
+            </v-btn>
           </div>
 
           <v-divider class="my-4"></v-divider>
@@ -264,13 +422,13 @@ onMounted(() => {
       </v-card>
     </v-dialog>
 
-    <!-- Create Group Dialog -->
-    <v-dialog v-model="showCreateGroupDialog" max-width="400">
+    <!-- Create / Edit Group Dialog -->
+    <v-dialog v-model="showGroupDialog" max-width="420">
       <v-card class="gc-border">
-        <v-card-title>Create New Group</v-card-title>
+        <v-card-title>{{ isEditingGroup ? 'Edit Group' : 'Create New Group' }}</v-card-title>
         <v-card-text>
           <v-text-field
-            v-model="newGroupName"
+            v-model="groupForm.name"
             label="Group Name"
             placeholder="jit-access-demo-api"
             prepend-icon="mdi-account-multiple"
@@ -278,7 +436,7 @@ onMounted(() => {
             class="mb-4"
           ></v-text-field>
           <v-text-field
-            v-model="newGroupDescription"
+            v-model="groupForm.description"
             label="Description"
             placeholder="Optional: Group description"
             prepend-icon="mdi-information"
@@ -287,8 +445,39 @@ onMounted(() => {
         </v-card-text>
         <v-card-actions>
           <v-spacer></v-spacer>
-          <v-btn variant="flat" @click="showCreateGroupDialog = false">Cancel</v-btn>
-          <v-btn color="primary" variant="flat" @click="createGroup">Create</v-btn>
+          <v-btn variant="flat" @click="showGroupDialog = false">Cancel</v-btn>
+          <v-btn color="primary" variant="flat" @click="saveGroup">{{ isEditingGroup ? 'Save' : 'Create' }}</v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
+
+    <!-- Delete Group Dialog -->
+    <v-dialog v-model="showDeleteGroupDialog" max-width="420">
+      <v-card class="gc-border">
+        <v-card-title>Delete Group</v-card-title>
+        <v-card-text>
+          Sigur vrei sa stergi grupul <strong>{{ groupToDelete?.name }}</strong>?
+        </v-card-text>
+        <v-card-actions>
+          <v-spacer></v-spacer>
+          <v-btn variant="flat" @click="showDeleteGroupDialog = false">Cancel</v-btn>
+          <v-btn color="error" variant="flat" @click="deleteGroup">Delete</v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
+
+    <!-- User Status Dialog -->
+    <v-dialog v-model="showUserStatusDialog" max-width="420">
+      <v-card class="gc-border">
+        <v-card-title>Update User Status</v-card-title>
+        <v-card-text>
+          Confirma ca vrei sa {{ pendingUserStatus ? 'activezi' : 'dezactivezi' }} userul
+          <strong>{{ selectedUser?.username }}</strong>.
+        </v-card-text>
+        <v-card-actions>
+          <v-spacer></v-spacer>
+          <v-btn variant="flat" @click="showUserStatusDialog = false">Cancel</v-btn>
+          <v-btn color="primary" variant="flat" @click="updateUserStatus">Confirm</v-btn>
         </v-card-actions>
       </v-card>
     </v-dialog>
