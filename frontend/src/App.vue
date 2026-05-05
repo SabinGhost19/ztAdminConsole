@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, computed, onUnmounted, watch } from 'vue'
-import { useRouter, useRoute } from 'vue-router'
+import { useRoute } from 'vue-router'
 import { useTheme } from 'vuetify'
 import { api } from './api/axios'
 import { useNotificationStore } from './store/notification'
@@ -8,7 +8,6 @@ import { useDashboardStore } from './store/dashboard'
 import { useAuthStore } from './store/auth'
 
 const drawer = ref(true)
-const router = useRouter()
 const route = useRoute()
 const theme = useTheme()
 const notifyStore = useNotificationStore()
