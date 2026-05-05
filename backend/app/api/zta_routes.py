@@ -1,9 +1,11 @@
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from typing import Any, Dict, List
 
 from pydantic import BaseModel, Field
 
 from app.services import zta_service
+from app.security.identity import Identity, require_permission
+from app.security import permissions as perm
 
 router = APIRouter()
 
@@ -29,10 +31,12 @@ async def list_zta_applications(request: Request):
     return await zta_service.list_zta_applications()
 
 @router.post("/", response_model=Dict[str, Any])
-async def create_zta_application(data: ZtaCreateIn, request: Request):
-    email = request.headers.get("X-Forwarded-Email")
-    if not email:
-        raise HTTPException(status_code=401, detail="X-Forwarded-Email missing. Access interzis.")
+async def create_zta_application(
+    data: ZtaCreateIn,
+    request: Request,
+    identity: Identity = Depends(require_permission(perm.P_APPS_WRITE)),
+):
+    email = identity.email
 
     res = await zta_service.create_zta_application(
         namespace=data.namespace,
@@ -50,6 +54,11 @@ async def create_zta_application(data: ZtaCreateIn, request: Request):
     return res
 
 @router.delete("/{namespace}/{name}")
-async def delete_zta_application(namespace: str, name: str, request: Request):
+async def delete_zta_application(
+    namespace: str,
+    name: str,
+    request: Request,
+    _identity: Identity = Depends(require_permission(perm.P_APPS_WRITE)),
+):
     await zta_service.delete_zta_application(namespace, name)
     return {"status": "success", "message": f"{name} șters cu succes. ZTA Operator reconciliază rețeaua."}

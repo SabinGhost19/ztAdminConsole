@@ -3,9 +3,12 @@ import { computed, onMounted, ref } from 'vue'
 import { api } from '../api/axios'
 import { useNotificationStore } from '../store/notification'
 import { useDashboardStore } from '../store/dashboard'
+import { useAuthStore } from '../store/auth'
 
 const notifyStore = useNotificationStore()
 const dashboardStore = useDashboardStore()
+const auth = useAuthStore()
+const canWriteSecrets = computed(() => auth.can('secrets:write'))
 
 const isLoading = computed(() => dashboardStore.loadingSecrets)
 const secrets = computed(() => dashboardStore.secrets)
@@ -147,7 +150,9 @@ async function revokeZts(namespace: string, name: string) {
             <v-text-field v-if="form.mappingType === 'VolumeMount'" v-model="form.mountPath" label="Mount Path" variant="outlined" density="compact" hide-details="auto" class="mb-4"></v-text-field>
             <v-text-field v-model="form.refreshInterval" label="Refresh Interval" placeholder="ex. 1m, 10m" variant="outlined" density="compact" hide-details="auto"></v-text-field>
             
-            <v-btn :loading="isSubmitting" @click="submitSecretDeclaration" color="primary" block variant="flat" elevation="0" class="mt-6 text-none font-weight-medium">Authorize ESO Pull</v-btn>
+            <v-btn :loading="isSubmitting" :disabled="!canWriteSecrets" @click="submitSecretDeclaration" color="primary" block variant="flat" elevation="0" class="mt-6 text-none font-weight-medium">
+              {{ canWriteSecrets ? 'Authorize ESO Pull' : 'Necesită platform-engineer' }}
+            </v-btn>
           </v-card-text>
         </v-card>
       </v-col>
@@ -179,7 +184,7 @@ async function revokeZts(namespace: string, name: string) {
                   <td class="font-mono text-caption text-secondary">{{ zts.metadata.namespace }}</td>
                   <td class="font-mono text-caption text-secondary">{{ zts.spec.secretData?.remotePath }} -> {{ zts.summary.targetSecretName }}</td>
                   <td class="text-right">
-                     <v-btn @click="revokeZts(zts.metadata.namespace, zts.metadata.name)" color="error" size="small" variant="text" icon="mdi-delete" title="Sterge delegarea ZTS"></v-btn>
+                     <v-btn v-if="canWriteSecrets" @click="revokeZts(zts.metadata.namespace, zts.metadata.name)" color="error" size="small" variant="text" icon="mdi-delete" title="Sterge delegarea ZTS"></v-btn>
                   </td>
                 </tr>
               </tbody>

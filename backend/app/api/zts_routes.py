@@ -1,9 +1,11 @@
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from typing import Any, Dict, List
 
 from pydantic import BaseModel, Field
 
 from app.services import zts_service
+from app.security.identity import Identity, require_permission
+from app.security import permissions as perm
 
 router = APIRouter()
 
@@ -40,10 +42,12 @@ async def list_zts_secrets(request: Request):
     return await zts_service.list_zts_secrets()
 
 @router.post("/", response_model=Dict[str, Any])
-async def create_zts_secret(data: ZtsCreateIn, request: Request):
-    email = request.headers.get("X-Forwarded-Email")
-    if not email:
-        raise HTTPException(status_code=401, detail="X-Forwarded-Email missing. Access interzis.")
+async def create_zts_secret(
+    data: ZtsCreateIn,
+    request: Request,
+    identity: Identity = Depends(require_permission(perm.P_SECRETS_WRITE)),
+):
+    email = identity.email
 
     res = await zts_service.create_zts_secret(
         namespace=data.namespace,
@@ -60,6 +64,11 @@ async def create_zts_secret(data: ZtsCreateIn, request: Request):
     return res
 
 @router.delete("/{namespace}/{name}")
-async def delete_zts_secret(namespace: str, name: str, request: Request):
+async def delete_zts_secret(
+    namespace: str,
+    name: str,
+    request: Request,
+    _identity: Identity = Depends(require_permission(perm.P_SECRETS_WRITE)),
+):
     await zts_service.delete_zts_secret(namespace, name)
     return {"status": "success", "message": f"{name} a fost șters! Toate referințele Vault delegate sunt curățate."}

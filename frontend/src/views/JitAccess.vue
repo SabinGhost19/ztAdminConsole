@@ -4,10 +4,17 @@ import { api } from '../api/axios'
 import { useJitStore, JitSession } from '../store/jit'
 import { useNotificationStore } from '../store/notification'
 import { useDashboardStore } from '../store/dashboard'
+import { useAuthStore } from '../store/auth'
 
 const jitStore = useJitStore()
 const notifyStore = useNotificationStore()
 const dashboardStore = useDashboardStore()
+const auth = useAuthStore()
+
+const canApprove = computed(() => auth.can('jit:approve'))
+const canRevoke = computed(() => auth.can('jit:revoke'))
+const canRequest = computed(() => auth.can('jit:request'))
+const canWritePolicy = computed(() => auth.can('jit:policy:write'))
 
 const sessions = computed(() => jitStore.sessions)
 const isLoading = computed(() => jitStore.isLoading)
@@ -422,17 +429,18 @@ async function savePolicies() {
                   prepend-inner-icon="mdi-text-box-edit-outline"
                 ></v-textarea>
                 
-                <v-btn 
+                <v-btn
                   :loading="isSubmitting"
+                  :disabled="!canRequest"
                   @click="submitRequest"
-                  color="primary" 
-                  block 
-                  variant="flat" 
-                  elevation="0" 
+                  color="primary"
+                  block
+                  variant="flat"
+                  elevation="0"
                   class="mt-6 text-none font-weight-medium"
                   prepend-icon="mdi-shield-key-outline"
                 >
-                  Request K8S Access
+                  {{ canRequest ? 'Request K8S Access' : 'Necesită rol developer / sre / platform-engineer' }}
                 </v-btn>
               </v-window-item>
 
@@ -474,18 +482,18 @@ async function savePolicies() {
                   prepend-inner-icon="mdi-text-box-edit-outline"
                 ></v-textarea>
 
-                <v-btn 
+                <v-btn
                   :loading="isSubmitting"
                   @click="submitWebRequest"
-                  color="primary" 
-                  block 
-                  variant="flat" 
-                  elevation="0" 
+                  color="primary"
+                  block
+                  variant="flat"
+                  elevation="0"
                   class="mt-6 text-none font-weight-medium"
                   prepend-icon="mdi-web-check"
-                  :disabled="!webForm.appName"
+                  :disabled="!webForm.appName || !canRequest"
                 >
-                  Request Ingress Access
+                  {{ canRequest ? 'Request Ingress Access' : 'Necesită rol developer / sre / platform-engineer' }}
                 </v-btn>
               </v-window-item>
 
@@ -535,15 +543,22 @@ async function savePolicies() {
                             {{ session.state }}
                           </v-chip>
                           <div v-if="session.state === 'PENDING'" class="d-flex gap-1">
-                            <v-btn size="x-small" variant="flat" color="success" @click="approveJitSession(session.session_id)" :loading="isApprovingSession">
+                            <v-tooltip v-if="!canApprove" text="Necesită rolul platform-engineer sau security-auditor." location="left">
+                              <template v-slot:activator="{ props: tProps }">
+                                <span v-bind="tProps">
+                                  <v-btn size="x-small" variant="flat" color="success" disabled>Approve</v-btn>
+                                </span>
+                              </template>
+                            </v-tooltip>
+                            <v-btn v-else size="x-small" variant="flat" color="success" @click="approveJitSession(session.session_id)" :loading="isApprovingSession">
                               Approve
                             </v-btn>
-                            <v-btn size="x-small" variant="flat" color="error" @click="() => { sessionToRevoke = session; isConfirmRevokeOpen = true }">
+                            <v-btn v-if="canRevoke" size="x-small" variant="flat" color="error" @click="() => { sessionToRevoke = session; isConfirmRevokeOpen = true }">
                               Deny
                             </v-btn>
                           </div>
                           <div v-else-if="session.state === 'ACTIVE'" class="d-flex gap-1">
-                            <v-btn size="x-small" variant="flat" color="error" @click="() => { sessionToRevoke = session; isConfirmRevokeOpen = true }">
+                            <v-btn v-if="canRevoke" size="x-small" variant="flat" color="error" @click="() => { sessionToRevoke = session; isConfirmRevokeOpen = true }">
                               Revoke
                             </v-btn>
                           </div>
@@ -702,7 +717,9 @@ async function savePolicies() {
                   <v-text-field v-model.number="policyForm.maxDurationMinutes" type="number" label="Max Duration Minutes" variant="outlined" density="compact"></v-text-field>
                 </v-col>
               </v-row>
-              <v-btn color="primary" variant="flat" :loading="isSavingPolicies" @click="savePolicies">Apply Cluster Policy</v-btn>
+              <v-btn color="primary" variant="flat" :loading="isSavingPolicies" :disabled="!canWritePolicy" @click="savePolicies">
+                {{ canWritePolicy ? 'Apply Cluster Policy' : 'Necesită platform-engineer' }}
+              </v-btn>
             </template>
           </v-card-text>
         </v-card>

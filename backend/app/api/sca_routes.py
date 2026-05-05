@@ -1,8 +1,10 @@
-from fastapi import APIRouter, Header
+from fastapi import APIRouter, Depends, Header
 from pydantic import BaseModel, Field
 from typing import Any, Dict, List
 
 from app.services.sca_service import list_sca_policies, create_sca_policy, delete_sca_policy
+from app.security.identity import Identity, require_permission
+from app.security import permissions as perm
 
 router = APIRouter()
 
@@ -23,9 +25,9 @@ async def get_all_scas():
 @router.post("/")
 async def create_sca(
     payload: ScaCreateIn,
-    x_forwarded_email: str = Header(None, alias="X-Forwarded-Email")
+    identity: Identity = Depends(require_permission(perm.P_APPS_WRITE)),
 ):
-    owner = x_forwarded_email or "admin@licenta.ro"
+    owner = identity.email
     res = await create_sca_policy(
         name=payload.name,
         user_email=owner,
@@ -40,6 +42,9 @@ async def create_sca(
     return {"status": "created", "resource": res}
 
 @router.delete("/{name}")
-async def remove_sca(name: str):
+async def remove_sca(
+    name: str,
+    _identity: Identity = Depends(require_permission(perm.P_APPS_WRITE)),
+):
     await delete_sca_policy(name)
     return {"status": "deleted"}

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from typing import Any, Dict, List
 
 from pydantic import BaseModel, Field
@@ -7,6 +7,8 @@ from app.services import jit_service
 from app.services.jit_admin_service import get_jit_analytics, get_jit_policies, update_jit_policies
 from app.services import k8s_jit_service
 from app.middleware.errors import ZeroTrustException
+from app.security.identity import current_user, require_permission, Identity
+from app.security import permissions as perm
 
 router = APIRouter()
 
@@ -28,23 +30,33 @@ class JitPoliciesIn(BaseModel):
     antiAbuse: AntiAbuseIn = Field(default_factory=AntiAbuseIn)
 
 @router.get("/sessions", response_model=List[Dict[str, Any]])
-async def get_all_jit_requests(request: Request):
+async def get_all_jit_requests(
+    request: Request,
+    _identity: Identity = Depends(require_permission(perm.P_JIT_READ)),
+):
     items = await jit_service.list_jit_requests()
     return items
 
 
 @router.get("/analytics", response_model=Dict[str, Any])
-async def get_jit_anti_abuse_analytics() -> Dict[str, Any]:
+async def get_jit_anti_abuse_analytics(
+    _identity: Identity = Depends(require_permission(perm.P_JIT_READ)),
+) -> Dict[str, Any]:
     return await get_jit_analytics()
 
 
 @router.get("/policies", response_model=Dict[str, Any])
-async def get_jit_policy_config() -> Dict[str, Any]:
+async def get_jit_policy_config(
+    _identity: Identity = Depends(require_permission(perm.P_JIT_READ)),
+) -> Dict[str, Any]:
     return await get_jit_policies()
 
 
 @router.put("/policies", response_model=Dict[str, Any])
-async def update_jit_policy_config(data: JitPoliciesIn) -> Dict[str, Any]:
+async def update_jit_policy_config(
+    data: JitPoliciesIn,
+    _identity: Identity = Depends(require_permission(perm.P_JIT_POLICY_WRITE)),
+) -> Dict[str, Any]:
     return await update_jit_policies(
         {
             "blockedUsers": data.blockedUsers,
@@ -53,11 +65,11 @@ async def update_jit_policy_config(data: JitPoliciesIn) -> Dict[str, Any]:
     )
 
 @router.post("/request", response_model=Dict[str, Any])
-async def create_jit_session(data: JitCreateIn, request: Request):
-    email = request.headers.get("X-Forwarded-Email")
-    if not email:
-        raise HTTPException(status_code=401, detail="Header-ul de identitate X-Forwarded-Email lipsește. Acces interzis.")
-
+async def create_jit_session(
+    data: JitCreateIn,
+    request: Request,
+    identity: Identity = Depends(require_permission(perm.P_JIT_REQUEST)),
+):
     import uuid
 
     name = f"jit-{uuid.uuid4().hex[:6]}"
@@ -65,7 +77,7 @@ async def create_jit_session(data: JitCreateIn, request: Request):
     res = await jit_service.create_jit_request(
         namespace=data.namespace,
         name=name,
-        user_email=email,
+        user_email=identity.email,
         duration=data.duration,
         role=data.role
     )
@@ -73,7 +85,12 @@ async def create_jit_session(data: JitCreateIn, request: Request):
 
 
 @router.get("/request/{namespace}/{name}", response_model=Dict[str, Any])
-async def get_jit_request_single(namespace: str, name: str, request: Request):
+async def get_jit_request_single(
+    namespace: str,
+    name: str,
+    request: Request,
+    _identity: Identity = Depends(require_permission(perm.P_JIT_READ_OWN)),
+):
     """Fetch a single JITAccessRequest CRD by namespace/name."""
     try:
         res = await k8s_jit_service.get_jit_request(namespace=namespace, name=name)
@@ -82,13 +99,21 @@ async def get_jit_request_single(namespace: str, name: str, request: Request):
         raise HTTPException(status_code=404, detail=f"JIT request not found: {e}")
 
 @router.delete("/revoke/{namespace}/{name}")
-async def revoke_jit_session(namespace: str, name: str, request: Request):
+async def revoke_jit_session(
+    namespace: str,
+    name: str,
+    request: Request,
+    _identity: Identity = Depends(require_permission(perm.P_JIT_REVOKE)),
+):
     await jit_service.revoke_jit_access(namespace, name)
     return {"status": "success", "message": f"{name} a fost revocat cu succes."}
 
 
 @router.get("/sessions/aggregate", response_model=Dict[str, Any])
-async def aggregate_jit_sessions(request: Request):
+async def aggregate_jit_sessions(
+    request: Request,
+    _identity: Identity = Depends(require_permission(perm.P_JIT_READ)),
+):
     """Return aggregated sessions: operator CRD sessions and web JIT sessions from state DB."""
     from app.core.state_db import list_state_by_type
 
@@ -111,19 +136,20 @@ class WebJitCreateIn(BaseModel):
     duration: int = Field(60, ge=5, le=480, title="Durata accesului web in minute")
 
 @router.post("/web/request", response_model=Dict[str, Any])
-async def create_web_jit_session(data: WebJitCreateIn, request: Request):
-    email = request.headers.get("X-Forwarded-Email")
-    if not email:
-        raise HTTPException(status_code=401, detail="Missing X-Forwarded-Email header.")
+async def create_web_jit_session(
+    data: WebJitCreateIn,
+    request: Request,
+    identity: Identity = Depends(require_permission(perm.P_JIT_REQUEST)),
+):
+    email = identity.email
 
     success = kc_grant(email, data.app_name)
     if not success:
         raise HTTPException(status_code=500, detail="Eroare la adaugarea utilizatorului in Keycloak JIT group.")
 
-    # Inregistram expirarea
     expires_at = datetime.now(timezone.utc) + timedelta(minutes=data.duration)
     cache_key = f"webjit:{email}:{data.app_name}"
-    
+
     write_state(
         cache_key=cache_key,
         payload={"email": email, "app_name": data.app_name, "expires_at": expires_at.isoformat()},
@@ -135,24 +161,28 @@ async def create_web_jit_session(data: WebJitCreateIn, request: Request):
     return {"status": "success", "message": f"Acces web pentru {data.app_name} a fost grantat temporar.", "expires_at": expires_at.isoformat()}
 
 @router.delete("/web/revoke/{app_name}")
-async def revoke_web_jit_session(app_name: str, request: Request):
-    email = request.headers.get("X-Forwarded-Email")
-    if not email:
-        raise HTTPException(status_code=401, detail="Header lipsa.")
-
+async def revoke_web_jit_session(
+    app_name: str,
+    request: Request,
+    identity: Identity = Depends(require_permission(perm.P_JIT_REVOKE)),
+):
+    # Allow self-revoke even without P_JIT_REVOKE: anyone may revoke their own.
+    email = identity.email
     cache_key = f"webjit:{email}:{app_name}"
-    
+
     success = kc_revoke(email, app_name)
     if success:
         delete_state(cache_key)
-        
+
     return {"status": "success", "message": f"Acces web revocat manual pentru {app_name}."}
 
 from app.core.k8s import get_networking_api
 from app.services.keycloak_service import _get_admin
 
 @router.get("/web/apps", response_model=Dict[str, Any])
-async def list_web_apps():
+async def list_web_apps(
+    _identity: Identity = Depends(require_permission(perm.P_APPS_READ)),
+):
     net = get_networking_api()
     ingresses = await net.list_ingress_for_all_namespaces()
     apps = []
@@ -165,7 +195,9 @@ async def list_web_apps():
     return {"status": "success", "apps": apps}
 
 @router.get("/iam/users", response_model=Dict[str, Any])
-async def list_iam_users():
+async def list_iam_users(
+    _identity: Identity = Depends(require_permission(perm.P_IAM_READ)),
+):
     try:
         admin = _get_admin()
         users = admin.get_users()
@@ -198,14 +230,19 @@ class UserGroupAssignIn(BaseModel):
     group_id: str = Field(..., title="ID-ul grupului")
 
 @router.get("/iam/groups", response_model=Dict[str, Any])
-async def list_iam_groups():
+async def list_iam_groups(
+    _identity: Identity = Depends(require_permission(perm.P_IAM_READ)),
+):
     """List all groups in the realm"""
     from app.services.keycloak_service import list_all_groups
     groups = list_all_groups()
     return {"status": "success", "groups": groups}
 
 @router.post("/iam/groups", response_model=Dict[str, Any])
-async def create_iam_group(data: GroupCreateIn):
+async def create_iam_group(
+    data: GroupCreateIn,
+    _identity: Identity = Depends(require_permission(perm.P_IAM_WRITE)),
+):
     """Create a new group in Keycloak"""
     from app.services.keycloak_service import create_group_keycloak
     group_id = create_group_keycloak(data.name, data.description)
@@ -213,7 +250,11 @@ async def create_iam_group(data: GroupCreateIn):
 
 
 @router.put("/iam/groups/{group_id}", response_model=Dict[str, Any])
-async def update_iam_group(group_id: str, data: GroupUpdateIn):
+async def update_iam_group(
+    group_id: str,
+    data: GroupUpdateIn,
+    _identity: Identity = Depends(require_permission(perm.P_IAM_WRITE)),
+):
     """Update group name/description"""
     from app.services.keycloak_service import update_group_keycloak
     success = update_group_keycloak(group_id, data.name, data.description)
@@ -223,7 +264,10 @@ async def update_iam_group(group_id: str, data: GroupUpdateIn):
 
 
 @router.delete("/iam/groups/{group_id}", response_model=Dict[str, Any])
-async def delete_iam_group(group_id: str):
+async def delete_iam_group(
+    group_id: str,
+    _identity: Identity = Depends(require_permission(perm.P_IAM_WRITE)),
+):
     """Delete group by ID"""
     from app.services.keycloak_service import delete_group_keycloak
     success = delete_group_keycloak(group_id)
@@ -232,14 +276,21 @@ async def delete_iam_group(group_id: str):
     return {"status": "success", "group_id": group_id}
 
 @router.get("/iam/users/{user_id}/groups", response_model=Dict[str, Any])
-async def list_user_groups(user_id: str):
+async def list_user_groups(
+    user_id: str,
+    _identity: Identity = Depends(require_permission(perm.P_IAM_READ)),
+):
     """List all groups a user belongs to"""
     from app.services.keycloak_service import get_user_groups
     groups = get_user_groups(user_id)
     return {"status": "success", "groups": groups}
 
 @router.put("/iam/users/{user_id}/groups/{group_id}", response_model=Dict[str, Any])
-async def add_user_to_group(user_id: str, group_id: str):
+async def add_user_to_group(
+    user_id: str,
+    group_id: str,
+    _identity: Identity = Depends(require_permission(perm.P_IAM_WRITE)),
+):
     """Add a user to a group"""
     from app.services.keycloak_service import add_user_to_group_keycloak
     success = add_user_to_group_keycloak(user_id, group_id)
@@ -248,7 +299,11 @@ async def add_user_to_group(user_id: str, group_id: str):
     return {"status": "success", "message": f"User {user_id} added to group {group_id}"}
 
 @router.delete("/iam/users/{user_id}/groups/{group_id}", response_model=Dict[str, Any])
-async def remove_user_from_group(user_id: str, group_id: str):
+async def remove_user_from_group(
+    user_id: str,
+    group_id: str,
+    _identity: Identity = Depends(require_permission(perm.P_IAM_WRITE)),
+):
     """Remove a user from a group"""
     from app.services.keycloak_service import remove_user_from_group_keycloak
     success = remove_user_from_group_keycloak(user_id, group_id)
@@ -258,7 +313,11 @@ async def remove_user_from_group(user_id: str, group_id: str):
 
 
 @router.put("/iam/users/{user_id}/status", response_model=Dict[str, Any])
-async def update_iam_user_status(user_id: str, data: UserStatusIn):
+async def update_iam_user_status(
+    user_id: str,
+    data: UserStatusIn,
+    _identity: Identity = Depends(require_permission(perm.P_IAM_WRITE)),
+):
     """Enable/disable a user in Keycloak"""
     from app.services.keycloak_service import update_user_status_keycloak
     success = update_user_status_keycloak(user_id, data.enabled)
@@ -279,34 +338,45 @@ class JitSessionState(BaseModel):
     reason: str = None  # revocation reason
 
 @router.get("/sessions/state", response_model=Dict[str, Any])
-async def list_jit_sessions_state(request: Request):
+async def list_jit_sessions_state(
+    request: Request,
+    _identity: Identity = Depends(require_permission(perm.P_JIT_READ)),
+):
     """List all active JIT sessions with their state"""
     from app.services.jit_state_service import get_active_sessions
     sessions = get_active_sessions()
     return {"status": "success", "sessions": sessions}
 
 @router.post("/sessions/{session_id}/approve", response_model=Dict[str, Any])
-async def approve_jit_session(session_id: str, request: Request):
-    """Approve a PENDING JIT session (admin only)"""
-    approver = request.headers.get("X-Forwarded-Email")
+async def approve_jit_session(
+    session_id: str,
+    request: Request,
+    identity: Identity = Depends(require_permission(perm.P_JIT_APPROVE)),
+):
+    """Approve a PENDING JIT session"""
     from app.services.jit_state_service import approve_session
-    success = approve_session(session_id, approver)
+    success = approve_session(session_id, identity.email)
     if not success:
         raise HTTPException(status_code=404, detail="Session not found or not in PENDING state")
     return {"status": "success", "message": f"Session {session_id} approved"}
 
 @router.delete("/sessions/{session_id}/revoke", response_model=Dict[str, Any])
-async def revoke_jit_session_explicit(session_id: str, request: Request):
+async def revoke_jit_session_explicit(
+    session_id: str,
+    request: Request,
+    identity: Identity = Depends(require_permission(perm.P_JIT_REVOKE)),
+):
     """Revoke an active JIT session"""
-    revoker = request.headers.get("X-Forwarded-Email")
     from app.services.jit_state_service import revoke_session_explicit
-    success = revoke_session_explicit(session_id, revoker)
+    success = revoke_session_explicit(session_id, identity.email)
     if not success:
         raise HTTPException(status_code=404, detail="Session not found or already expired")
     return {"status": "success", "message": f"Session {session_id} revoked"}
 
 @router.get("/sessions/stats", response_model=Dict[str, Any])
-async def get_jit_sessions_stats():
+async def get_jit_sessions_stats(
+    _identity: Identity = Depends(require_permission(perm.P_JIT_READ)),
+):
     """Get statistics on JIT sessions"""
     from app.services.jit_state_service import get_session_stats
     stats = get_session_stats()

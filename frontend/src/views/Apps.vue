@@ -9,9 +9,12 @@ import ReconcileFlow from '../components/ReconcileFlow.vue'
 import SbomTree from '../components/SbomTree.vue'
 import { useNotificationStore } from '../store/notification'
 import { useDashboardStore } from '../store/dashboard'
+import { useAuthStore } from '../store/auth'
 
 const notifyStore = useNotificationStore()
 const dashboardStore = useDashboardStore()
+const auth = useAuthStore()
+const canWriteApps = computed(() => auth.can('apps:write'))
 
 const step = ref(1)
 const builderPanels = ref<number[]>([])
@@ -610,7 +613,9 @@ function submitDeclaration() {
                       <div class="d-flex mt-6">
                         <v-btn variant="text" @click="step = 3">Edit Specs</v-btn>
                         <v-spacer></v-spacer>
-                        <v-btn color="success" @click="submitDeclaration" :loading="isSubmitting" variant="flat" prepend-icon="mdi-google-cloud">Deploy ZTA Application</v-btn>
+                        <v-btn color="success" :disabled="!canWriteApps" @click="submitDeclaration" :loading="isSubmitting" variant="flat" prepend-icon="mdi-google-cloud">
+                          {{ canWriteApps ? 'Deploy ZTA Application' : 'Necesită platform-engineer' }}
+                        </v-btn>
                       </div>
                     </div>
                   </v-stepper-window-item>

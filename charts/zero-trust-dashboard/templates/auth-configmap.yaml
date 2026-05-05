@@ -1,0 +1,30 @@
+{{- /*
+The dashboard SPA boots before any API call by fetching /auth-config.json.
+That endpoint is served *directly* from the frontend container by mounting
+this ConfigMap at /usr/share/nginx/html/auth-config.json (or the equivalent
+path for whatever static webserver the image uses).
+
+We deliberately use a static JSON file rather than baking the values at
+build-time because the same image must be promotable across environments
+(staging vs prod) without rebuild. The chart fully owns the public OIDC
+parameters.
+*/ -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "zero-trust-dashboard.fullname" . }}-auth-config
+  labels:
+    app: {{ include "zero-trust-dashboard.name" . }}-frontend
+    component: auth-bootstrap
+data:
+  auth-config.json: |-
+    {
+      "authentication": {
+        "url":       {{ .Values.keycloak.url | quote }},
+        "realm":     {{ .Values.keycloak.realm | quote }},
+        "client_id": {{ .Values.keycloak.dashboardClient.clientId | quote }},
+        "audience":  {{ .Values.keycloak.dashboardClient.audience | quote }},
+        "issuer":    "{{ .Values.keycloak.url }}/realms/{{ .Values.keycloak.realm }}",
+        "bypass":    {{ .Values.auth.bypass }}
+      }
+    }

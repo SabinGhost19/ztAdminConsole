@@ -1,4 +1,6 @@
 import axios, { type InternalAxiosRequestConfig } from 'axios'
+
+import { ensureFreshToken, getToken, isBypass } from '../../auth/keycloak'
 import { useNotificationStore } from '../../store/notification'
 
 type RequestMetadata = {
@@ -9,6 +11,7 @@ type RequestMetadata = {
 type RequestConfigWithMetadata = InternalAxiosRequestConfig & {
   metadata?: RequestMetadata
   retry?: number
+  authRetried?: boolean
   skipGlobalErrorAlert?: boolean
 }
 
@@ -19,17 +22,29 @@ function createTraceId(prefix = 'REQ') {
 export const api = axios.create({
   baseURL: '/api/v1',
   headers: {
-    // Simulăm Keycloak / Identity Proxy header, care e obligatoriu acum de backend
-    'X-Forwarded-Email': 'devsecops@admin.local',
     'Content-Type': 'application/json',
   },
 })
 
-api.interceptors.request.use((config) => {
+api.interceptors.request.use(async (config) => {
   const typedConfig = config as RequestConfigWithMetadata
   const traceId = createTraceId()
   typedConfig.headers = typedConfig.headers || {}
   typedConfig.headers['X-Request-ID'] = traceId
+
+  // Inject Bearer token unless we are in bypass mode (local dev).
+  if (!isBypass()) {
+    try {
+      await ensureFreshToken(30)
+    } catch {
+      // ignore - the response interceptor will catch the eventual 401
+    }
+    const token = getToken()
+    if (token) {
+      typedConfig.headers['Authorization'] = `Bearer ${token}`
+    }
+  }
+
   typedConfig.metadata = {
     traceId,
     startedAt: Date.now(),
@@ -37,27 +52,43 @@ api.interceptors.request.use((config) => {
   return typedConfig
 })
 
-// Retry mechanism pt erorile de tip 502/503/504
 api.interceptors.response.use(
   (response) => response,
   async (error) => {
     const notifyStore = useNotificationStore()
-    const { response } = error;
+    const { response } = error
     const config = error.config as RequestConfigWithMetadata | undefined
     if (config?.skipGlobalErrorAlert) {
       return Promise.reject(error)
     }
     const traceId = response?.data?.trace_id || config?.metadata?.traceId || createTraceId('ERR')
     const durationMs = config?.metadata?.startedAt ? Date.now() - config.metadata.startedAt : undefined
-    
+
     if (config && typeof config.retry !== 'number') {
-      config.retry = 0;
+      config.retry = 0
     }
     const retryCount = config?.retry ?? 0
 
+    // 401: try a token refresh once before giving up. This handles the
+    // race where the JWT just expired between two API calls.
+    if (response?.status === 401 && config && !config.authRetried && !isBypass()) {
+      config.authRetried = true
+      try {
+        await ensureFreshToken(0)
+        const token = getToken()
+        if (token) {
+          config.headers = config.headers || {}
+          config.headers['Authorization'] = `Bearer ${token}`
+          return api(config)
+        }
+      } catch {
+        // fall through to surface the 401 error
+      }
+    }
+
     if (config && retryCount < 3 && (!response || (response.status >= 502 && response.status <= 504))) {
       const nextRetryCount = retryCount + 1
-      config.retry = nextRetryCount;
+      config.retry = nextRetryCount
       notifyStore.addAlert({
         error_code: 'NETWORK_RETRY_INITIATED',
         message: 'Conexiune instabilă, reîncercare comunicare...',
@@ -70,33 +101,36 @@ api.interceptors.response.use(
         timestamp: new Date().toISOString(),
         source: 'network',
         details: durationMs ? { durationMs } : null,
-        type: 'warning'
+        type: 'warning',
       })
-      const backoff = new Promise(resolve => setTimeout(resolve, nextRetryCount * 1000));
-      await backoff;
-      return api(config);
+      const backoff = new Promise((resolve) => setTimeout(resolve, nextRetryCount * 1000))
+      await backoff
+      return api(config)
     }
-    
+
     if (error.response && error.response.data) {
       const data = error.response.data
-      
+
       notifyStore.addAlert({
-        error_code: data.error_code || 'UNKNOWN_ERROR',
-        message: data.message || 'S-a produs o eroare neașteptată în comunicarea cu backend-ul.',
-        technical_details: data.technical_details || error.message,
+        error_code: data.error_code || (response?.status === 403 ? 'FORBIDDEN' : 'UNKNOWN_ERROR'),
+        message: data.message || (response?.status === 403
+          ? 'Nu ai permisiunile necesare pentru această acțiune.'
+          : 'S-a produs o eroare neașteptată în comunicarea cu backend-ul.'),
+        technical_details: data.technical_details || (typeof data.detail === 'object' ? JSON.stringify(data.detail) : data.detail) || error.message,
         component: data.component || 'FRONTEND_AXIOS',
         trace_id: traceId,
-        action_required: data.action_required || 'Verificați logurile sau contactați SecOps.',
+        action_required: data.action_required || (response?.status === 403
+          ? 'Solicită aprobare către un platform-engineer sau security-auditor.'
+          : 'Verificați logurile sau contactați SecOps.'),
         status_code: data.status_code || error.response.status,
         request_method: data.request_method || String(config?.method || 'GET').toUpperCase(),
         request_path: data.request_path || config?.url,
         timestamp: data.timestamp || new Date().toISOString(),
         source: 'backend',
-        details: data.details || (durationMs ? { durationMs } : null),
-        type: error.response.status >= 500 ? 'warning' : 'error'
+        details: data.details || data.detail || (durationMs ? { durationMs } : null),
+        type: error.response.status >= 500 ? 'warning' : 'error',
       })
     } else {
-      // Eroare Critical Fatal (Backend Total Offline)
       notifyStore.addAlert({
         error_code: 'CRITICAL_NETWORK_FAILURE',
         message: 'Sistem indisponibil. Lanțul de încredere a eșuat la conexiunea cu API-ul din cluster.',
@@ -109,11 +143,10 @@ api.interceptors.response.use(
         timestamp: new Date().toISOString(),
         source: 'network',
         details: durationMs ? { durationMs } : null,
-        type: 'error'
+        type: 'error',
       })
     }
 
     return Promise.reject(error)
-  }
+  },
 )
-

@@ -8,7 +8,19 @@ from app.core.k8s import close_k8s, init_k8s
 from app.core.logging import configure_logging
 from app.core.state_db import close_state_db, init_state_db
 from app.middleware.errors import global_exception_handler
-from app.api import drift_routes, integrity_routes, jit_routes, overview_routes, sca_routes, system_routes, zta_routes, zts_routes
+from app.api import (
+    auth_routes,
+    breakglass_routes,
+    drift_routes,
+    integrity_routes,
+    jit_routes,
+    overview_routes,
+    sca_routes,
+    system_routes,
+    zta_routes,
+    zts_routes,
+)
+from app.security.identity import get_auth_config, optional_identity
 
 configure_logging()
 logger = logging.getLogger("zero_trust_backend")
@@ -22,37 +34,108 @@ app = FastAPI(
 # Adaugă middleware-ul de erori logic curat
 app.add_exception_handler(Exception, global_exception_handler)
 
+# Routes that may be reached without a valid Bearer token. Anything else
+# requires authentication via the require_identity middleware below, which
+# itself defers the verdict to FastAPI dependencies (so individual routes
+# can opt out by being on this list).
+## (method, path-or-prefix) tuples. Method "*" matches any verb. Trailing
+## "/*" means "any subpath".  Order matters: first match wins.
+PUBLIC_ROUTES = (
+    ("*", "/api/v1/health"),
+    ("*", "/api/v1/auth/config"),
+    ("*", "/api/v1/auth/permissions"),
+    # Agent-side ingestion endpoints. Authenticated separately via the
+    # optional bearer token configured in the ebpf-honeypot Helm chart
+    # (auditForwarder.bearerTokenSecret).
+    ("POST", "/api/v1/breakglass/audit"),
+    ("POST", "/api/v1/breakglass/heartbeat"),
+    ("*", "/docs"),
+    ("*", "/docs/*"),
+    ("*", "/openapi.json"),
+    ("*", "/redoc"),
+    ("*", "/redoc/*"),
+)
+
+
+def _is_public(method: str, path: str) -> bool:
+    method = method.upper()
+    for m, pattern in PUBLIC_ROUTES:
+        if m != "*" and m != method:
+            continue
+        if pattern.endswith("/*"):
+            base = pattern[:-2]
+            if path == base or path.startswith(base + "/"):
+                return True
+        else:
+            if path == pattern:
+                return True
+    return False
+
+
 @app.middleware("http")
 async def require_identity_header(request: Request, call_next):
     trace_id = request.headers.get("X-Request-ID", str(uuid.uuid4()))
     request.state.trace_id = trace_id
     start_time = time.perf_counter()
 
-    # Domiciliat temporar deschis: bypass complet de autentificare (până când OIDC va fi reactivat)
-    # Totuși, injectăm o identitate de mock pentru componentele JIT care se bazează pe acest email
-    email = request.headers.get("X-Forwarded-Email", "admin@devsecops.licenta.ro")
-    
-    # Suprascriem headers-urile temporar
+    cfg = get_auth_config()
+    path = request.url.path
+
+    # Resolve identity once. For public routes we still try (so handlers
+    # can know the caller if they want to), but failures are ignored.
+    identity = optional_identity(request)
+
+    if not identity and not _is_public(request.method, path) and not cfg.bypass:
+        # Fail fast with a structured 401; the SPA will redirect to login.
+        logger.info(
+            f"[{trace_id}] 401 missing/invalid token for {request.method} {path}",
+            extra={"trace_id": trace_id, "path": path, "method": request.method},
+        )
+        return JSONResponse(
+            status_code=401,
+            content={
+                "error_code": "UNAUTHENTICATED",
+                "message": "Authentication required.",
+                "trace_id": trace_id,
+                "request_path": path,
+                "request_method": request.method,
+            },
+            headers={"X-Request-ID": trace_id},
+        )
+
+    # For backward-compat with routes that still read X-Forwarded-Email,
+    # propagate the email from the verified identity. Defence-in-depth:
+    # we OVERWRITE any pre-existing X-Forwarded-Email header coming from
+    # the client because Keycloak is now the only source of truth.
     from starlette.datastructures import MutableHeaders
     new_headers = MutableHeaders(request.headers)
-    new_headers["X-Forwarded-Email"] = email
     new_headers["X-Request-ID"] = trace_id
+    if identity:
+        new_headers["X-Forwarded-Email"] = identity.email
+    elif cfg.bypass:
+        new_headers["X-Forwarded-Email"] = cfg.bypass_email
+    elif "X-Forwarded-Email" in new_headers:
+        # No identity but header set client-side: drop it (anti-spoof).
+        del new_headers["X-Forwarded-Email"]
     request._headers = new_headers
     request.scope.update(headers=request.headers.raw)
 
     logger.info(
-        f"[{trace_id}] Incoming request {request.method} {request.url.path}",
-        extra={"trace_id": trace_id, "path": request.url.path, "method": request.method, "details": {"query": dict(request.query_params)}},
+        f"[{trace_id}] Incoming request {request.method} {path} (auth={'yes' if identity else 'public'})",
+        extra={"trace_id": trace_id, "path": path, "method": request.method,
+               "details": {"query": dict(request.query_params),
+                           "user": (identity.email if identity else None),
+                           "groups": (identity.groups if identity else None)}},
     )
 
     response = await call_next(request)
     duration_ms = round((time.perf_counter() - start_time) * 1000, 2)
     response.headers["X-Request-ID"] = trace_id
     logger.info(
-        f"[{trace_id}] Completed {request.method} {request.url.path} -> {response.status_code} in {duration_ms}ms",
+        f"[{trace_id}] Completed {request.method} {path} -> {response.status_code} in {duration_ms}ms",
         extra={
             "trace_id": trace_id,
-            "path": request.url.path,
+            "path": path,
             "method": request.method,
             "status_code": response.status_code,
             "details": {"durationMs": duration_ms},
@@ -101,7 +184,11 @@ async def startup_event():
     await init_k8s()
     init_state_db()
     logger.info("Initialized in-memory SQLite state cache")
-    
+
+    from app.services.breakglass_service import configure_from_env
+    configure_from_env()
+    logger.info("Break-glass service configured")
+
     # Initialize background scheduler for periodic tasks
     from app.core.background_tasks import init_background_scheduler
     init_background_scheduler()
@@ -131,16 +218,54 @@ async def shutdown_event():
 async def health_check():
     return {"status": "ok", "component": "backend", "logging": "enabled"}
 
-@app.get("/api/v1/auth/me", tags=["System"])
-async def get_current_user(request: Request):
-    email = request.headers.get("X-Forwarded-Email", "admin@devsecops.licenta.ro")
-    return {"email": email, "roles": ["admin"]}
+from fastapi import Depends as _Depends
+from app.security.identity import require_permission as _req
+from app.security import permissions as _p
 
+app.include_router(auth_routes.router, prefix="/api/v1/auth", tags=["Authentication"])
+# /jit and /breakglass routers carry their own per-route guards because the
+# permissions diverge inside the router (read vs write vs revoke).
 app.include_router(jit_routes.router, prefix="/api/v1/jit", tags=["JIT Access Module"])
-app.include_router(zta_routes.router, prefix="/api/v1/zta", tags=["ZTA Controller Module"])
-app.include_router(zts_routes.router, prefix="/api/v1/zts", tags=["Zero-Trust Secret Delegation"])
-app.include_router(sca_routes.router, prefix="/api/v1/sca", tags=["Supply Chain Attestations"])
-app.include_router(drift_routes.router, prefix="/api/v1/drift", tags=["ZTA Drift Analyzer"])
-app.include_router(overview_routes.router, prefix="/api/v1/overview", tags=["Cluster Security Pulse"])
-app.include_router(integrity_routes.router, prefix="/api/v1/integrity", tags=["Software Integrity"])
-app.include_router(system_routes.router, prefix="/api/v1/system", tags=["Observability"])
+app.include_router(
+    zta_routes.router,
+    prefix="/api/v1/zta",
+    tags=["ZTA Controller Module"],
+    dependencies=[_Depends(_req(_p.P_APPS_READ))],
+)
+app.include_router(
+    zts_routes.router,
+    prefix="/api/v1/zts",
+    tags=["Zero-Trust Secret Delegation"],
+    dependencies=[_Depends(_req(_p.P_SECRETS_READ))],
+)
+app.include_router(
+    sca_routes.router,
+    prefix="/api/v1/sca",
+    tags=["Supply Chain Attestations"],
+    dependencies=[_Depends(_req(_p.P_SCA_READ))],
+)
+app.include_router(
+    drift_routes.router,
+    prefix="/api/v1/drift",
+    tags=["ZTA Drift Analyzer"],
+    dependencies=[_Depends(_req(_p.P_SECURITY_READ))],
+)
+app.include_router(
+    overview_routes.router,
+    prefix="/api/v1/overview",
+    tags=["Cluster Security Pulse"],
+    dependencies=[_Depends(_req(_p.P_OVERVIEW_READ))],
+)
+app.include_router(
+    integrity_routes.router,
+    prefix="/api/v1/integrity",
+    tags=["Software Integrity"],
+    dependencies=[_Depends(_req(_p.P_SECURITY_READ))],
+)
+app.include_router(
+    system_routes.router,
+    prefix="/api/v1/system",
+    tags=["Observability"],
+    dependencies=[_Depends(_req(_p.P_SECURITY_READ))],
+)
+app.include_router(breakglass_routes.router, prefix="/api/v1/breakglass", tags=["Break-Glass / eBPF Honeypot"])

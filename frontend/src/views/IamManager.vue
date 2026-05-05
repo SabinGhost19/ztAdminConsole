@@ -2,6 +2,10 @@
 import { computed, ref, onMounted } from 'vue'
 import { api } from '../api/axios'
 import { useNotificationStore } from '../store/notification'
+import { useAuthStore } from '../store/auth'
+
+const auth = useAuthStore()
+const canWriteIam = computed(() => auth.can('iam:write'))
 
 interface User {
   id: string
@@ -317,8 +321,8 @@ onMounted(() => {
         <!-- GROUPS TAB -->
         <div v-if="currentTab === 'groups'" class="mt-4">
           <div class="d-flex flex-wrap align-center gap-4 mb-4">
-            <v-btn color="primary" prepend-icon="mdi-plus" @click="openCreateGroupDialog">
-              Create Group
+            <v-btn color="primary" prepend-icon="mdi-plus" :disabled="!canWriteIam" @click="openCreateGroupDialog">
+              {{ canWriteIam ? 'Create Group' : 'Necesită platform-engineer' }}
             </v-btn>
             <v-text-field
               v-model="groupSearch"
@@ -347,10 +351,10 @@ onMounted(() => {
                 <p v-else class="text-caption text-secondary mb-0">No description</p>
               </v-card-text>
               <v-card-actions>
-                <v-btn size="small" variant="text" color="primary" @click="openEditGroupDialog(group)">
+                <v-btn size="small" variant="text" color="primary" :disabled="!canWriteIam" @click="openEditGroupDialog(group)">
                   Edit
                 </v-btn>
-                <v-btn size="small" variant="text" color="error" @click="promptDeleteGroup(group)">
+                <v-btn size="small" variant="text" color="error" :disabled="!canWriteIam" @click="promptDeleteGroup(group)">
                   Delete
                 </v-btn>
               </v-card-actions>
@@ -383,6 +387,7 @@ onMounted(() => {
               size="small"
               variant="tonal"
               :color="selectedUser.enabled ? 'error' : 'success'"
+              :disabled="!canWriteIam"
               @click="promptUserStatusChange(!selectedUser.enabled)"
             >
               {{ selectedUser.enabled ? 'Disable User' : 'Enable User' }}
@@ -396,7 +401,7 @@ onMounted(() => {
             <v-chip
               v-for="group in selectedUser.groups"
               :key="group.id"
-              closable
+              :closable="canWriteIam"
               class="me-2 mb-2"
               @click:close="removeUserFromGroup(selectedUser.id, group.id)"
             >
@@ -412,6 +417,7 @@ onMounted(() => {
             variant="outlined"
             density="compact"
             class="mt-2"
+            :disabled="!canWriteIam"
             @update:model-value="(groupId) => { if (groupId) addUserToGroup(selectedUser!.id, groupId as string) }"
           ></v-select>
         </v-card-text>

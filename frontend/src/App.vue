@@ -5,6 +5,7 @@ import { useTheme } from 'vuetify'
 import { api } from './api/axios'
 import { useNotificationStore } from './store/notification'
 import { useDashboardStore } from './store/dashboard'
+import { useAuthStore } from './store/auth'
 
 const drawer = ref(true)
 const router = useRouter()
@@ -12,6 +13,7 @@ const route = useRoute()
 const theme = useTheme()
 const notifyStore = useNotificationStore()
 const dashboardStore = useDashboardStore()
+const auth = useAuthStore()
 
 const alerts = computed(() => notifyStore.alerts)
 const alertHistory = computed(() => notifyStore.history)
@@ -23,19 +25,15 @@ const backendLogsLastRefresh = ref('')
 let backendLogsTimer: ReturnType<typeof setInterval> | null = null
 
 
-const userProfile = ref<any | null>(null)
+const userProfile = computed(() => auth.identity)
 
 onMounted(async () => {
-  // Verificare Status Backend (Live)
-  try {
-    const res = await api.get('/auth/me'); 
-    userProfile.value = res.data;
-  } catch (err: any) {
-    userProfile.value = { email: 'secops@licenta.local', name: 'ZTA Admin', roles: ['admin'] };
-    // Interceptorul va intercepta eroarea, vom lăsa store-ul să rezolve afișarea ei
+  if (!auth.ready) {
+    await auth.bootstrap()
   }
-
-  dashboardStore.fetchOverview().catch(() => undefined)
+  if (auth.can('overview:read')) {
+    dashboardStore.fetchOverview().catch(() => undefined)
+  }
 })
 
 onUnmounted(() => {
@@ -62,15 +60,33 @@ watch(errorCenterOpen, (open) => {
   }
 })
 
-const menuItems = [
-  { title: 'Overview', icon: 'mdi-google-circles-extended', path: '/' },
-  { title: 'JIT Access', icon: 'mdi-shield-account-outline', path: '/jit' },
-  { title: 'Identities (IAM)', icon: 'mdi-account-group', path: '/iam' },
-  { title: 'ZTA Builder', icon: 'mdi-cube-outline', path: '/apps' },
-  { title: 'Secret Vault', icon: 'mdi-lock-pattern', path: '/secrets' },
-  { title: 'Supply Chain (SCA)', icon: 'mdi-shield-link-variant', path: '/sca' },
-  { title: 'Security Posture', icon: 'mdi-radar', path: '/security' },
+interface MenuItem {
+  title: string
+  icon: string
+  path: string
+  requires: string[]
+}
+
+const allMenuItems: MenuItem[] = [
+  { title: 'Overview', icon: 'mdi-google-circles-extended', path: '/', requires: ['overview:read'] },
+  { title: 'JIT Access', icon: 'mdi-shield-account-outline', path: '/jit', requires: ['jit:request', 'jit:read', 'jit:approve'] },
+  { title: 'Identities (IAM)', icon: 'mdi-account-group', path: '/iam', requires: ['iam:read'] },
+  { title: 'ZTA Builder', icon: 'mdi-cube-outline', path: '/apps', requires: ['apps:read'] },
+  { title: 'Secret Vault', icon: 'mdi-lock-pattern', path: '/secrets', requires: ['secrets:read'] },
+  { title: 'Supply Chain (SCA)', icon: 'mdi-shield-link-variant', path: '/sca', requires: ['sca:read'] },
+  { title: 'Security Posture', icon: 'mdi-radar', path: '/security', requires: ['security:read'] },
+  { title: 'Break-Glass (eBPF)', icon: 'mdi-shield-key-outline', path: '/break-glass', requires: ['breakglass:read'] },
 ]
+
+const menuItems = computed(() => {
+  return allMenuItems.filter((item) =>
+    item.requires.length === 0 || item.requires.some((p) => auth.can(p)),
+  )
+})
+
+async function logout() {
+  await auth.logout()
+}
 
 function toggleTheme() {
   theme.global.name.value = theme.global.current.value.dark ? 'googleCloudTheme' : 'googleCloudDarkTheme'
@@ -170,14 +186,39 @@ function formatTimestamp(value?: string) {
           <v-icon>mdi-text-box-search-outline</v-icon>
         </v-badge>
       </v-btn>
-      <v-avatar 
-        color="primary" 
-        size="32" 
-        class="ml-2 mr-3 text-caption font-weight-bold" 
-        :title="userProfile?.email || 'Loading...'"
-      >
-        {{ userProfile ? getInitials(userProfile.name) : '...' }}
-      </v-avatar>
+      <v-menu offset-y>
+        <template v-slot:activator="{ props: menuProps }">
+          <v-btn variant="text" v-bind="menuProps" class="ml-2 mr-3 px-2">
+            <v-avatar
+              color="primary"
+              size="32"
+              class="text-caption font-weight-bold mr-2"
+              :title="userProfile?.email || 'Loading...'"
+            >
+              {{ auth.initials || (userProfile ? getInitials(userProfile.name) : '...') }}
+            </v-avatar>
+            <span class="text-caption d-none d-md-flex flex-column align-start" style="line-height: 1.2;">
+              <span class="font-weight-medium">{{ userProfile?.name || userProfile?.email || 'Loading…' }}</span>
+              <span class="text-medium-emphasis">{{ (userProfile?.groups || []).join(', ') || 'no groups' }}</span>
+            </span>
+          </v-btn>
+        </template>
+        <v-list density="compact">
+          <v-list-item>
+            <v-list-item-title class="text-caption">{{ userProfile?.email }}</v-list-item-title>
+            <v-list-item-subtitle class="text-caption">
+              {{ (userProfile?.permissions || []).length }} permissions
+            </v-list-item-subtitle>
+          </v-list-item>
+          <v-divider />
+          <v-list-item :disabled="auth.bypass" prepend-icon="mdi-logout" @click="logout">
+            <v-list-item-title>Sign out</v-list-item-title>
+            <v-list-item-subtitle v-if="auth.bypass" class="text-caption">
+              dezactivat în BYPASS_AUTH
+            </v-list-item-subtitle>
+          </v-list-item>
+        </v-list>
+      </v-menu>
     </v-app-bar>
 
     <!-- Side Navigation Sidebar -->
@@ -201,6 +242,23 @@ function formatTimestamp(value?: string) {
             <v-icon :icon="item.icon" size="small"></v-icon>
           </template>
           <v-list-item-title class="text-body-2 font-weight-medium">{{ item.title }}</v-list-item-title>
+        </v-list-item>
+        <v-divider class="my-2" />
+        <v-list-item
+          v-if="auth.identity"
+          density="compact"
+          rounded="lg"
+          class="mb-1"
+        >
+          <template v-slot:prepend>
+            <v-icon size="small">mdi-account-key-outline</v-icon>
+          </template>
+          <v-list-item-title class="text-caption text-medium-emphasis">
+            Logged in as
+          </v-list-item-title>
+          <v-list-item-subtitle class="text-caption">
+            {{ auth.identity.email }}
+          </v-list-item-subtitle>
         </v-list-item>
       </v-list>
     </v-navigation-drawer>

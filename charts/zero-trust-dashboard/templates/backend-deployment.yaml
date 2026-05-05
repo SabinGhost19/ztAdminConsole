@@ -39,6 +39,7 @@ spec:
             initialDelaySeconds: 5
             periodSeconds: 10
           env:
+            ## --- Legacy M2M admin client (keycloak_service.py) -----
             - name: KEYCLOAK_URL
               value: "http://keycloak.platform-identity.svc.cluster.local/"
             - name: KEYCLOAK_REALM
@@ -50,5 +51,39 @@ spec:
                 secretKeyRef:
                   name: jit-backend-keycloak
                   key: client-secret
+            ## --- Dashboard SPA OIDC (security/identity.py) ----------
+            - name: DASHBOARD_KEYCLOAK_PUBLIC_URL
+              value: {{ .Values.keycloak.url | quote }}
+            - name: DASHBOARD_KEYCLOAK_ISSUER
+              value: "{{ .Values.keycloak.url }}/realms/{{ .Values.keycloak.realm }}"
+            - name: DASHBOARD_KEYCLOAK_JWKS_URL
+              value: "{{ .Values.keycloak.url }}/realms/{{ .Values.keycloak.realm }}/protocol/openid-connect/certs"
+            - name: DASHBOARD_KEYCLOAK_AUDIENCE
+              value: {{ .Values.keycloak.dashboardClient.audience | quote }}
+            - name: DASHBOARD_KEYCLOAK_CLIENT_ID
+              value: {{ .Values.keycloak.dashboardClient.clientId | quote }}
+            - name: DASHBOARD_KEYCLOAK_GROUPS_CLAIM
+              value: {{ .Values.keycloak.dashboardClient.groupsClaim | quote }}
+            - name: BYPASS_AUTH
+              value: {{ .Values.auth.bypass | quote }}
+            - name: BYPASS_AUTH_EMAIL
+              value: {{ .Values.auth.bypassEmail | quote }}
+            {{- if .Values.breakglass.enabled }}
+            - name: BREAKGLASS_JWT_PRIVATE_KEY_PATH
+              value: /etc/breakglass/private.pem
+            {{- end }}
+          {{- if .Values.breakglass.enabled }}
+          volumeMounts:
+            - name: breakglass-keys
+              mountPath: /etc/breakglass
+              readOnly: true
+          {{- end }}
           resources:
             {{- toYaml .Values.backend.resources | nindent 12 }}
+      {{- if .Values.breakglass.enabled }}
+      volumes:
+        - name: breakglass-keys
+          secret:
+            secretName: {{ .Values.breakglass.secretName }}
+            optional: true
+      {{- end }}

@@ -34,5 +34,17 @@ spec:
               port: http
             initialDelaySeconds: 5
             periodSeconds: 10
+          volumeMounts:
+            - name: auth-config
+              mountPath: /usr/share/nginx/html/auth-config.json
+              subPath: auth-config.json
+              readOnly: true
           resources:
             {{- toYaml .Values.frontend.resources | nindent 12 }}
+      volumes:
+        - name: auth-config
+          configMap:
+            name: {{ include "zero-trust-dashboard.fullname" . }}-auth-config
+            items:
+              - key: auth-config.json
+                path: auth-config.json

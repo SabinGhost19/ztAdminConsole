@@ -3,9 +3,12 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { api } from '../api/axios'
 import { useNotificationStore } from '../store/notification'
 import { useDashboardStore } from '../store/dashboard'
+import { useAuthStore } from '../store/auth'
 
 const notifyStore = useNotificationStore()
 const dashboardStore = useDashboardStore()
+const auth = useAuthStore()
+const canWriteSca = computed(() => auth.can('apps:write'))
 
 const isLoading = computed(() => dashboardStore.loadingPolicies)
 const policies = computed(() => dashboardStore.policies)
@@ -336,7 +339,9 @@ async function revokeSca(name: string) {
               class="mb-4"
             ></v-select>
             
-            <v-btn :loading="isSubmitting" @click="submitScaDeclaration" color="primary" block variant="flat" elevation="0" class="mt-4 text-none font-weight-medium">Aplică Politica Supply Chain</v-btn>
+            <v-btn :loading="isSubmitting" :disabled="!canWriteSca" @click="submitScaDeclaration" color="primary" block variant="flat" elevation="0" class="mt-4 text-none font-weight-medium">
+              {{ canWriteSca ? 'Aplică Politica Supply Chain' : 'Necesită platform-engineer' }}
+            </v-btn>
           </v-card-text>
         </v-card>
       </v-col>

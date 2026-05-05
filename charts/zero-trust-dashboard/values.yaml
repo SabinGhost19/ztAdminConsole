@@ -28,13 +28,71 @@ backend:
       cpu: 100m
       memory: 128Mi
 
+## Keycloak integration. Two distinct concerns share this top-level key:
+##
+##   1. The legacy admin-API client used by the backend service to call
+##      Keycloak as a confidential M2M client (jit-backend-admin etc).
+##      This is `clientSecret` and is consumed by `keycloak_service.py`.
+##
+##   2. The new public SPA client (`zero-trust-dashboard`) used directly
+##      by the browser. This is configured under `dashboardClient` and is
+##      surfaced to the SPA via the `auth-config.json` ConfigMap.
 keycloak:
   clientSecret: "ChangeMe-JITBackend-2026!"
+
+  ## Where Keycloak is reachable from the browser. The SPA loads this
+  ## URL directly through CORS, so it must be a public hostname even when
+  ## Keycloak itself is behind the same ingress.
+  url: "https://keycloak.zerotrust.licenta.local"
+
+  ## Realm name. FreeIPA federation must already be configured here.
+  realm: "zerotrust"
+
+  ## Public OIDC client for the dashboard SPA. Must exist in Keycloak.
+  ## Required configuration in Keycloak admin console:
+  ##   - Client ID:                 zero-trust-dashboard
+  ##   - Access type:               public
+  ##   - Standard Flow:             ENABLED  (Authorization Code + PKCE)
+  ##   - Direct Access Grants:      DISABLED
+  ##   - Valid Redirect URIs:       https://dashboard.devsecops.licenta.ro/*
+  ##                                http://localhost:3000/* (for `npm run dev`)
+  ##   - Web Origins:               +
+  ##   - Mappers: groups (Group Membership) -> "groups" claim
+  ##              audience           -> "zero-trust-dashboard"
+  dashboardClient:
+    clientId: "zero-trust-dashboard"
+    audience: "zero-trust-dashboard"
+    groupsClaim: "groups"
+
+## Authentication enforcement at the backend layer.
+auth:
+  ## DEV-ONLY. When true, the backend skips JWT validation entirely and
+  ## injects a synthetic identity in *all* groups. NEVER turn this on in
+  ## production. Default is false.
+  bypass: false
+
+  ## Email used by the synthetic identity when bypass is enabled. Useful
+  ## for e2e tests that grep audit logs by email.
+  bypassEmail: "dev@devsecops.licenta.ro"
+
+## Break-Glass / eBPF honeypot integration. The Secret is created by the
+## ebpf-honeypot pre-install Job (jwt-keygen), see ebpf-honeypot/values.yaml
+## (jwt.backendSecretName / jwt.backendNamespace).
+breakglass:
+  enabled: true
+  secretName: "ebpf-honeypot-jwt-keypair"
 
 ingress:
   enabled: true
   className: "nginx"
-  annotations: {}
+  annotations:
+    # Keycloak access tokens with embedded group claims can easily exceed
+    # the default 8k buffer; bump it so the upstream (nginx in the
+    # frontend pod) doesn't reject them with 502.
+    nginx.ingress.kubernetes.io/proxy-buffer-size: "16k"
+    nginx.ingress.kubernetes.io/proxy-buffers-number: "8"
+    # Keep the Authorization header end-to-end.
+    nginx.ingress.kubernetes.io/upstream-vhost: "$service_name.$namespace.svc.cluster.local"
   hosts:
     - host: dashboard.devsecops.licenta.ro
       paths:
