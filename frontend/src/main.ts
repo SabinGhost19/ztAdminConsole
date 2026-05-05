@@ -64,7 +64,7 @@ start().catch((err) => {
     root.innerHTML = `
       <div style="font-family: sans-serif; padding: 2rem; max-width: 720px; margin: 0 auto;">
         <h1 style="color:#b00020">Dashboard nu a putut porni</h1>
-        <p>Autentificarea Keycloak a eșuat. Verifică DNS-ul către <code>keycloak.zerotrust.licenta.local</code>
+        <p>Autentificarea Keycloak a eșuat. Verifică DNS-ul către <code>keycloak.licenta.ro</code>
            sau valoarea <code>/auth-config.json</code> servită de container.</p>
         <pre style="background:#fafafa; padding:1rem; overflow:auto;">${(err && err.stack) || err}</pre>
       </div>

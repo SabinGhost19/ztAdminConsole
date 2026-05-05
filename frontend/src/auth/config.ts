@@ -7,7 +7,7 @@
  *      operator can change.
  *   2. /api/v1/auth/config served by the backend itself. Useful for local
  *      development where a static file is not mounted.
- *   3. Hard-coded defaults pointing at https://keycloak.zerotrust.licenta.local.
+ *   3. Hard-coded defaults aligned with platform-identity Keycloak Ingress.
  *      Last resort - logs a console warning.
  *
  * The function is idempotent and caches its result so the SPA pays the
@@ -24,11 +24,11 @@ export interface AuthRuntimeConfig {
 }
 
 const FALLBACK: AuthRuntimeConfig = {
-  url: 'https://keycloak.zerotrust.licenta.local',
-  realm: 'zerotrust',
+  url: 'https://keycloak.licenta.ro',
+  realm: 'ZeroTrust-Realm',
   clientId: 'zero-trust-dashboard',
   audience: 'zero-trust-dashboard',
-  issuer: 'https://keycloak.zerotrust.licenta.local/realms/zerotrust',
+  issuer: 'https://keycloak.licenta.ro/realms/ZeroTrust-Realm',
   bypass: false,
 }
 

@@ -40,25 +40,18 @@ backend:
 keycloak:
   clientSecret: "ChangeMe-JITBackend-2026!"
 
-  ## Where Keycloak is reachable from the browser. The SPA loads this
-  ## URL directly through CORS, so it must be a public hostname even when
-  ## Keycloak itself is behind the same ingress.
-  url: "https://keycloak.zerotrust.licenta.local"
+  ## Public Ingress URL for Keycloak (see platform-identity/keycloak).
+  ## Must match what browsers use; issuer will be
+  ##   {url}/realms/{realm}
+  url: "https://keycloak.licenta.ro"
 
-  ## Realm name. FreeIPA federation must already be configured here.
-  realm: "zerotrust"
+  ## Must match the realm imported in Keycloak (values-configmap) and the
+  ## Terraform module under keycloak-bootstrap/terraform (ZeroTrust-Realm).
+  realm: "ZeroTrust-Realm"
 
-  ## Public OIDC client for the dashboard SPA. Must exist in Keycloak.
-  ## Required configuration in Keycloak admin console:
-  ##   - Client ID:                 zero-trust-dashboard
-  ##   - Access type:               public
-  ##   - Standard Flow:             ENABLED  (Authorization Code + PKCE)
-  ##   - Direct Access Grants:      DISABLED
-  ##   - Valid Redirect URIs:       https://dashboard.devsecops.licenta.ro/*
-  ##                                http://localhost:3000/* (for `npm run dev`)
-  ##   - Web Origins:               +
-  ##   - Mappers: groups (Group Membership) -> "groups" claim
-  ##              audience           -> "zero-trust-dashboard"
+  ## Public OIDC client — created by GitOps Terraform:
+  ##   infra-tools/.../keycloak-bootstrap/terraform/dashboard-client.tf
+  ## (Flux object: keycloak-clients-bootstrap in platform-identity).
   dashboardClient:
     clientId: "zero-trust-dashboard"
     audience: "zero-trust-dashboard"
