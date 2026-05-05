@@ -1,3 +1,10 @@
+# [1.8.0](https://github.com/SabinGhost19/ztAdminConsole/compare/v1.7.0...v1.8.0) (2026-05-05)
+
+
+### Features
+
+* **zta-rbac-login:** login rbac using keycloak:v3 ([1b37a5c](https://github.com/SabinGhost19/ztAdminConsole/commit/1b37a5cd05c552eb5f99df060ff232f849da4066))
+
 # [1.7.0](https://github.com/SabinGhost19/ztAdminConsole/compare/v1.6.0...v1.7.0) (2026-05-05)
 
 
