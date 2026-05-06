@@ -42,6 +42,13 @@ api.interceptors.request.use(async (config) => {
     const token = getToken()
     if (token) {
       typedConfig.headers['Authorization'] = `Bearer ${token}`
+    } else {
+      // eslint-disable-next-line no-console
+      console.warn('[auth][request] No Keycloak token available for request', {
+        method: String(typedConfig.method || 'GET').toUpperCase(),
+        url: typedConfig.url,
+        traceId,
+      })
     }
   }
 
@@ -72,6 +79,14 @@ api.interceptors.response.use(
     // 401: try a token refresh once before giving up. This handles the
     // race where the JWT just expired between two API calls.
     if (response?.status === 401 && config && !config.authRetried && !isBypass()) {
+      // eslint-disable-next-line no-console
+      console.warn('[auth][response] 401 received, attempting one token refresh retry', {
+        url: config?.url,
+        method: String(config?.method || 'GET').toUpperCase(),
+        traceId,
+        backendMessage: response?.data?.message,
+        backendCode: response?.data?.error_code,
+      })
       config.authRetried = true
       try {
         await ensureFreshToken(0)
@@ -81,8 +96,19 @@ api.interceptors.response.use(
           config.headers['Authorization'] = `Bearer ${token}`
           return api(config)
         }
+        // eslint-disable-next-line no-console
+        console.error('[auth][response] Refresh succeeded but token still missing', {
+          url: config?.url,
+          method: String(config?.method || 'GET').toUpperCase(),
+          traceId,
+        })
       } catch {
-        // fall through to surface the 401 error
+        // eslint-disable-next-line no-console
+        console.error('[auth][response] Token refresh failed after 401', {
+          url: config?.url,
+          method: String(config?.method || 'GET').toUpperCase(),
+          traceId,
+        })
       }
     }
 

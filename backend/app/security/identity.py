@@ -357,10 +357,26 @@ def get_identity(request: Request) -> Identity:
 def optional_identity(request: Request) -> Optional[Identity]:
     """Resolve identity but do not raise. Routes that should respond
     differently when authenticated vs anonymous can use this."""
+    identity, _error = optional_identity_with_error(request)
+    return identity
+
+
+def optional_identity_with_error(request: Request) -> tuple[Optional[Identity], Optional[str]]:
+    """Resolve identity without raising and expose the concrete reason.
+
+    Useful for middleware-level diagnostics where we need to distinguish
+    missing Authorization header from JWT validation mismatches.
+    """
     try:
-        return get_identity(request)
-    except HTTPException:
-        return None
+        return get_identity(request), None
+    except HTTPException as exc:
+        detail = exc.detail
+        if isinstance(detail, str):
+            reason = detail
+        else:
+            reason = str(detail)
+        request.state.auth_error_reason = reason
+        return None, reason
 
 
 # Convenience exposed as a Depends() target for handlers that just need

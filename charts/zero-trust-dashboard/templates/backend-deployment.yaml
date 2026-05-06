@@ -57,7 +57,7 @@ spec:
             - name: DASHBOARD_KEYCLOAK_ISSUER
               value: "{{ .Values.keycloak.url }}/realms/{{ .Values.keycloak.realm }}"
             - name: DASHBOARD_KEYCLOAK_JWKS_URL
-              value: "{{ .Values.keycloak.url }}/realms/{{ .Values.keycloak.realm }}/protocol/openid-connect/certs"
+              value: "http://keycloak.platform-identity.svc.cluster.local/realms/{{ .Values.keycloak.realm }}/protocol/openid-connect/certs"
             - name: DASHBOARD_KEYCLOAK_AUDIENCE
               value: {{ .Values.keycloak.dashboardClient.audience | quote }}
             - name: DASHBOARD_KEYCLOAK_CLIENT_ID

@@ -20,7 +20,7 @@ from app.api import (
     zta_routes,
     zts_routes,
 )
-from app.security.identity import get_auth_config, optional_identity
+from app.security.identity import get_auth_config, optional_identity_with_error
 
 configure_logging()
 logger = logging.getLogger("zero_trust_backend")
@@ -83,13 +83,24 @@ async def require_identity_header(request: Request, call_next):
 
     # Resolve identity once. For public routes we still try (so handlers
     # can know the caller if they want to), but failures are ignored.
-    identity = optional_identity(request)
+    identity, auth_error_reason = optional_identity_with_error(request)
 
     if not identity and not _is_public(request.method, path) and not cfg.bypass:
+        auth_header = request.headers.get("Authorization") or request.headers.get("authorization")
+        has_bearer_header = bool(auth_header and auth_header.lower().startswith("bearer "))
         # Fail fast with a structured 401; the SPA will redirect to login.
         logger.info(
-            f"[{trace_id}] 401 missing/invalid token for {request.method} {path}",
-            extra={"trace_id": trace_id, "path": path, "method": request.method},
+            f"[{trace_id}] 401 unauthenticated for {request.method} {path}: {auth_error_reason or 'unknown'}",
+            extra={
+                "trace_id": trace_id,
+                "path": path,
+                "method": request.method,
+                "details": {
+                    "hasAuthorizationHeader": bool(auth_header),
+                    "hasBearerPrefix": has_bearer_header,
+                    "authErrorReason": auth_error_reason or "unknown",
+                },
+            },
         )
         return JSONResponse(
             status_code=401,

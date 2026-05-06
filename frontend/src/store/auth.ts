@@ -110,7 +110,15 @@ export const useAuthStore = defineStore('auth', {
       try {
         const response = await api.get('/auth/me', { skipGlobalErrorAlert: true } as any)
         this.identity = { ...EMPTY_IDENTITY, ...(response.data?.identity || {}) }
-      } catch {
+      } catch (err: any) {
+        // eslint-disable-next-line no-console
+        console.error('[auth][store] Failed to load /auth/me', {
+          status: err?.response?.status,
+          backendCode: err?.response?.data?.error_code,
+          backendMessage: err?.response?.data?.message,
+          traceId: err?.response?.data?.trace_id,
+          requestPath: err?.response?.data?.request_path,
+        })
         this.identity = null
         this.authenticated = false
       }
