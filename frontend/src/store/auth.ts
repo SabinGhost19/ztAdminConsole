@@ -139,6 +139,9 @@ export const useAuthStore = defineStore('auth', {
 
     async login() {
       if (this.bypass) return
+      if (this.initError) {
+        throw new Error(`Auth bootstrap failed before login: ${this.initError}`)
+      }
       await kcLogin()
     },
 

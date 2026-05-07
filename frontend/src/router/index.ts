@@ -109,6 +109,24 @@ router.beforeEach(async (to) => {
 
   if (to.meta?.public) return true
 
+  // If auth bootstrap failed (Keycloak config/network/init), avoid calling
+  // auth.login() blindly because that throws "Keycloak not initialised".
+  if (auth.initError && !auth.bypass) {
+    // eslint-disable-next-line no-console
+    console.error('[auth][router] bootstrap failed; blocking protected route', {
+      initError: auth.initError,
+      target: to.fullPath,
+    })
+    return {
+      name: 'Unauthorized',
+      query: {
+        reason: 'auth-init-failed',
+        detail: auth.initError,
+        target: String(to.fullPath),
+      },
+    }
+  }
+
   if (!auth.authenticated && !auth.bypass) {
     await auth.login()
     return false
