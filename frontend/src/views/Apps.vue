@@ -129,16 +129,26 @@ async function copyToClipboard(value: string) {
   await navigator.clipboard.writeText(value)
 }
 
+let pollingInFlight = false
+
 function startIntegrityPolling() {
   stopIntegrityPolling()
   if (!selectedApplication.value) return
+  pollingInFlight = false
   integrityPoller.value = window.setInterval(async () => {
-    const [namespace, name] = selectedApplication.value.split('/')
+    if (pollingInFlight) return
+    const currentApp = selectedApplication.value
+    if (!currentApp) return
+    const [namespace, name] = currentApp.split('/')
     if (!namespace || !name) return
-    const payload = await dashboardStore.fetchIntegrity(namespace, name, true)
-    integrityDetails.value = payload
-    if (isIntegrityFlowStable(payload)) {
-      stopIntegrityPolling()
+    pollingInFlight = true
+    try {
+      const payload = await dashboardStore.fetchIntegrity(namespace, name, true)
+      if (selectedApplication.value !== currentApp) return
+      integrityDetails.value = payload
+      if (isIntegrityFlowStable(payload)) stopIntegrityPolling()
+    } finally {
+      pollingInFlight = false
     }
   }, 8000)
 }
@@ -163,12 +173,15 @@ function sanctionDotColor(event: any) {
   return 'warning'
 }
 
-function isIntegrityFlowStable(payload: any) {
+function isIntegrityFlowStable(payload: any): boolean {
   if (!payload) return false
   const phase = String(payload?.application?.summary?.phase || payload?.reconcileFlow?.phase || '')
-  const stages = payload?.reconcileFlow?.stages || []
-  const hasRunningStage = Array.isArray(stages) && stages.some((stage: any) => stage?.status === 'running')
-  return phase === 'Running' && !hasRunningStage
+  if (phase === 'Degraded' || phase === 'Failed_SupplyChain') return true
+  if (phase === 'Running') {
+    const stages = payload?.reconcileFlow?.stages || []
+    return !stages.some((s: any) => s?.status === 'running')
+  }
+  return false
 }
 
 const integrityCriticalIssues = computed(() => {
@@ -286,6 +299,9 @@ async function revalidateIntegrity() {
     const response = await api.post(`/integrity/applications/${namespace}/${name}/revalidate`)
     integrityDetails.value = response.data
     dashboardStore.setIntegrity(namespace, name, response.data)
+    if (!isIntegrityFlowStable(response.data)) {
+      startIntegrityPolling()
+    }
     notifyStore.addAlert({
       error_code: 'INTEGRITY_REVALIDATED',
       message: 'Revalidarea OCI a fost executată pentru aplicația selectată.',
@@ -335,8 +351,15 @@ function submitDeclaration() {
     .then((response: AxiosResponse<any>) => {
       isSubmitting.value = false
       step.value = 1
-      dashboardStore.fetchApplications(true).catch(() => undefined)
-      dashboardStore.fetchOverview(true).catch(() => undefined)
+      const savedSelection = selectedApplication.value
+      dashboardStore.fetchApplications(true)
+        .then(() => {
+          if (savedSelection && dashboardStore.applicationOptions.some(opt => opt.value === savedSelection)) {
+            selectedApplication.value = savedSelection
+          }
+        })
+        .catch(() => undefined)
+      dashboardStore.fetchOverview().catch(() => undefined)
       notifyStore.addAlert({
         error_code: 'ZTA_CREATED_SUCCESS',
         message: `Aplicația ZTA ${response.data.metadata?.name || 'cu succes'} a fost creată!`,

@@ -79,15 +79,18 @@ export const useDashboardStore = defineStore('dashboard', {
       try {
         const response = await api.get('/overview/')
         this.overview = response.data
-        try {
-          const jitAnalyticsResponse = await api.get('/jit/analytics')
-          this.jitAnalytics = jitAnalyticsResponse.data
-        } catch {
-          this.jitAnalytics = null
-        }
         return response.data
       } finally {
         this.loadingOverview = false
+      }
+    },
+
+    async fetchJitAnalytics() {
+      try {
+        const response = await api.get('/jit/analytics', { skipGlobalErrorAlert: true } as any)
+        this.jitAnalytics = response.data
+      } catch {
+        this.jitAnalytics = null
       }
     },
     async fetchApplications(force = false) {

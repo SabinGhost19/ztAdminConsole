@@ -66,13 +66,21 @@ def _metadata(item: dict[str, Any]) -> dict[str, Any]:
 def serialize_jit_request(item: dict[str, Any]) -> dict[str, Any]:
     spec = item.get("spec", {}) or {}
     status = item.get("status", {}) or {}
+    token = status.get("temporaryToken")
+    target_ns = spec.get("targetNamespace", "")
+    sa = status.get("temporaryServiceAccount")
+    command_to_use = (
+        f"kubectl --token='{token}' -n {target_ns} get pods"
+        if token and target_ns
+        else None
+    )
     return {
         "metadata": _metadata(item),
         "spec": spec,
         "status": status,
         "summary": {
             "developerId": spec.get("developerId"),
-            "targetNamespace": spec.get("targetNamespace"),
+            "targetNamespace": target_ns,
             "requestedRole": spec.get("requestedRole"),
             "duration": spec.get("duration"),
             "reason": spec.get("reason"),
@@ -80,6 +88,10 @@ def serialize_jit_request(item: dict[str, Any]) -> dict[str, Any]:
             "expiresAt": status.get("expiresAt"),
             "message": status.get("message"),
             "sessionId": status.get("sessionId"),
+            "temporaryToken": token,
+            "temporaryServiceAccount": sa,
+            "commandToUse": command_to_use,
+            "tokenIssued": bool(status.get("tokenIssued", False)),
         },
     }
 

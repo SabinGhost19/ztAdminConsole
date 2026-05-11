@@ -15,6 +15,7 @@ const canApprove = computed(() => auth.can('jit:approve'))
 const canRevoke = computed(() => auth.can('jit:revoke'))
 const canRequest = computed(() => auth.can('jit:request'))
 const canWritePolicy = computed(() => auth.can('jit:policy:write'))
+const canReadAll = computed(() => auth.can('jit:read'))
 
 const sessions = computed(() => jitStore.sessions)
 const isLoading = computed(() => jitStore.isLoading)
@@ -138,11 +139,17 @@ async function fetchWebApps() {
 }
 
 onMounted(() => {
-  jitStore.fetchSessions()
-  fetchWebApps()
-  fetchJitSessions()
-  dashboardStore.fetchOverview(true).catch(() => undefined)
-  loadJitAdmin().catch(() => undefined)
+  if (canReadAll.value) {
+    jitStore.fetchSessions()
+    fetchJitSessions()
+    loadJitAdmin().catch(() => undefined)
+  } else {
+    jitStore.fetchMySessions()
+  }
+  if (auth.can('apps:read')) {
+    fetchWebApps()
+  }
+  dashboardStore.fetchOverview().catch(() => undefined)
   timerId = setInterval(() => {
     now.value = Date.now()
   }, 1000)
@@ -152,6 +159,26 @@ onUnmounted(() => {
   clearInterval(timerId)
 })
 
+async function pollUntilActive(targetNamespace: string, maxWaitMs = 30000) {
+  const interval = 2000
+  const deadline = Date.now() + maxWaitMs
+  while (Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, interval))
+    if (canReadAll.value) {
+      await jitStore.fetchSessions()
+    } else {
+      await jitStore.fetchMySessions()
+    }
+    const active = jitStore.sessions.find(
+      (s) => s.namespace === targetNamespace && s.tokenIssued && s.commandToUse
+    )
+    if (active) {
+      generatedCommand.value = active.commandToUse!
+      return
+    }
+  }
+}
+
 async function submitRequest() {
   try {
     await jitStore.requestAccess({
@@ -159,16 +186,17 @@ async function submitRequest() {
       role: form.value.role,
       duration: form.value.duration
     })
-    await dashboardStore.fetchOverview(true)
+    await dashboardStore.fetchOverview()
     await loadJitAdmin()
-    generatedCommand.value = `export KUBECONFIG=~/.kube/cache/new-session.yaml\nkubectl auth whoami\nkubectl get pods -n ${form.value.namespace}`
+    generatedCommand.value = `# Waiting for operator... (~2s)`
+    pollUntilActive(form.value.namespace)
     notifyStore.addAlert({
         error_code: 'JIT_CREATED',
         message: 'JIT Access request trimis cu succes.',
         technical_details: `Rolul ${form.value.role} în ns ${form.value.namespace} pentru ${form.value.duration} minute. ${form.value.reason || 'Fără justificare adițională.'}`,
         component: 'JIT_OPERATOR',
         trace_id: Math.random().toString(36).substring(2),
-        action_required: 'Monitorizează statusul cererii și mesajul întors de operator.',
+        action_required: 'Operatorul procesează cererea. Tokenul va apărea automat în ~2 secunde.',
         type: 'warning'
     })
   } catch (err) {
@@ -291,6 +319,21 @@ function getTTLColor(expiresAtStr: string) {
 function getTTLColorClass(expiresAtStr: string) {
   const color = getTTLColor(expiresAtStr)
   return `text-${color}`
+}
+
+function copyTokenCommand(session: JitSession) {
+  const cmd = session.commandToUse || `kubectl --token='${session.temporaryToken}' -n ${session.namespace} get pods`
+  navigator.clipboard.writeText(cmd)
+  generatedCommand.value = cmd
+  notifyStore.addAlert({
+    error_code: 'TOKEN_COPIED',
+    message: 'Kubectl token command copiat.',
+    technical_details: `Session: ${session.id} | Expiră: ${session.expiresAt}`,
+    component: 'JIT_MODULE',
+    trace_id: `SYS-${Math.random().toString(36).substring(2)}`,
+    action_required: '',
+    type: 'warning'
+  })
 }
 
 function copyKubeconfig(sessionId: string) {
@@ -677,7 +720,14 @@ async function savePolicies() {
                         <v-btn icon="mdi-dots-vertical" variant="text" size="small" v-bind="props" color="secondary"></v-btn>
                       </template>
                       <v-list density="compact" class="gc-border" elevation="2">
-                        <v-list-item @click="copyKubeconfig(session.sessionId || session.id)" :disabled="session.status !== 'ACTIVE' && session.status !== 'APPROVED'" prepend-icon="mdi-code-json">
+                        <v-list-item
+                          v-if="session.tokenIssued && session.commandToUse"
+                          @click="copyTokenCommand(session)"
+                          prepend-icon="mdi-key-variant"
+                        >
+                          <v-list-item-title class="text-caption text-success font-weight-medium">Copy kubectl Token</v-list-item-title>
+                        </v-list-item>
+                        <v-list-item @click="copyKubeconfig(session.sessionId || session.id)" :disabled="!session.tokenIssued" prepend-icon="mdi-code-json">
                           <v-list-item-title class="text-caption">Copy Kubeconfig</v-list-item-title>
                         </v-list-item>
                         <v-list-item prepend-icon="mdi-information-outline">
@@ -694,7 +744,7 @@ async function savePolicies() {
       </v-col>
     </v-row>
 
-    <v-row class="mt-2">
+    <v-row v-if="canReadAll" class="mt-2">
       <v-col cols="12" lg="5">
         <v-card class="gc-border h-100" flat>
           <v-card-title class="text-primary">Anti-Abuse Policy Editor</v-card-title>

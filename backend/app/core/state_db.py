@@ -143,12 +143,6 @@ def read_state_record(cache_key: str) -> dict[str, Any] | None:
         ).fetchone()
         if not row:
             return None
-        now = _utc_now_iso()
-        _conn.execute(
-            "UPDATE state_cache SET accessed_at = ? WHERE cache_key = ?",
-            (now, cache_key),
-        )
-        _conn.commit()
         return {
             "cacheKey": str(row[0]),
             "namespace": row[1],
@@ -160,7 +154,7 @@ def read_state_record(cache_key: str) -> dict[str, Any] | None:
             "payload": json.loads(str(row[7])),
             "metadata": json.loads(str(row[8])),
             "updatedAt": str(row[9]),
-            "accessedAt": now,
+            "accessedAt": str(row[10]),
         }
 
 

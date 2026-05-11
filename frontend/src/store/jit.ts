@@ -6,11 +6,14 @@ export interface JitSession {
   namespace: string;
   user: string;
   role: string;
-  duration: number; // in minutes
-  expiresAt: string; // ISO string
-  status: 'ACTIVE' | 'APPROVED' | 'EXPIRED' | 'REVOKED' | 'PENDING' | 'DENIED';
+  duration: number;
+  expiresAt: string;
+  status: 'ACTIVE' | 'APPROVED' | 'EXPIRED' | 'REVOKED' | 'PENDING' | 'DENIED' | 'TAMPERED';
   message?: string;
   sessionId?: string;
+  temporaryToken?: string;
+  commandToUse?: string;
+  tokenIssued?: boolean;
 }
 
 export const useJitStore = defineStore('jit', {
@@ -24,17 +27,7 @@ export const useJitStore = defineStore('jit', {
       this.isLoading = true;
       try {
         const response = await api.get('/jit/sessions');
-        this.sessions = response.data.map((crt: any) => ({
-           id: crt.metadata?.name || crt.summary?.sessionId || 'jit-unknown',
-           namespace: crt.metadata?.namespace || crt.summary?.targetNamespace || 'default',
-           user: crt.summary?.developerId || crt.metadata?.annotations?.['jit.devsecops/user'] || 'Unknown',
-           role: crt.summary?.requestedRole || 'view',
-           duration: parseDurationMinutes(crt.summary?.duration),
-           expiresAt: crt.summary?.expiresAt || new Date().toISOString(),
-           status: normalizeStatus(crt.summary?.state),
-           message: crt.summary?.message,
-           sessionId: crt.summary?.sessionId,
-        }));
+        this.sessions = response.data.map(mapSession);
       } catch (error) {
         console.error('Fetch sessions failed', error);
       } finally {
@@ -55,6 +48,18 @@ export const useJitStore = defineStore('jit', {
       }
     },
 
+    async fetchMySessions() {
+      this.isLoading = true;
+      try {
+        const response = await api.get('/jit/my-requests');
+        this.sessions = response.data.map(mapSession);
+      } catch (error) {
+        console.error('Fetch my sessions failed', error);
+      } finally {
+        this.isLoading = false;
+      }
+    },
+
     async revokeSession(namespace: string, name: string) {
       try {
         await api.delete(`/jit/revoke/${namespace}/${name}`);
@@ -67,6 +72,23 @@ export const useJitStore = defineStore('jit', {
   }
 })
 
+function mapSession(crt: any): JitSession {
+  return {
+    id: crt.metadata?.name || crt.summary?.sessionId || 'jit-unknown',
+    namespace: crt.metadata?.namespace || crt.summary?.targetNamespace || 'default',
+    user: crt.summary?.developerId || crt.metadata?.annotations?.['jit.devsecops/user'] || 'Unknown',
+    role: crt.summary?.requestedRole || 'view',
+    duration: parseDurationMinutes(crt.summary?.duration),
+    expiresAt: crt.summary?.expiresAt || new Date().toISOString(),
+    status: normalizeStatus(crt.summary?.state),
+    message: crt.summary?.message,
+    sessionId: crt.summary?.sessionId,
+    temporaryToken: crt.summary?.temporaryToken,
+    commandToUse: crt.summary?.commandToUse,
+    tokenIssued: crt.summary?.tokenIssued === true,
+  }
+}
+
 function parseDurationMinutes(duration: string | undefined) {
   if (!duration) return 0
   const normalized = String(duration).trim().toLowerCase()
@@ -77,11 +99,10 @@ function parseDurationMinutes(duration: string | undefined) {
 
 function normalizeStatus(value: string | undefined): JitSession['status'] {
   const state = String(value || 'PENDING').toUpperCase()
-  if (state === 'RUNNING') return 'ACTIVE'
+  if (state === 'RUNNING' || state === 'ACTIVE') return 'ACTIVE'
   if (state === 'APPROVED') return 'APPROVED'
-  if (state === 'ACTIVE') return 'ACTIVE'
   if (state === 'EXPIRED') return 'EXPIRED'
-  if (state === 'REVOKED') return 'REVOKED'
+  if (state === 'REVOKED' || state === 'TAMPERED') return 'REVOKED'
   if (state.startsWith('DENIED') || state.startsWith('BLOCKED')) return 'DENIED'
   return 'PENDING'
 }

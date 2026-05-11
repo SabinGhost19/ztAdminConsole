@@ -38,6 +38,19 @@ async def get_all_jit_requests(
     return items
 
 
+@router.get("/my-requests", response_model=List[Dict[str, Any]])
+async def get_my_jit_requests(
+    request: Request,
+    identity: Identity = Depends(require_permission(perm.P_JIT_READ_OWN)),
+):
+    """Return only the JIT requests that belong to the calling user."""
+    all_items = await jit_service.list_jit_requests()
+    return [
+        item for item in all_items
+        if item.get("summary", {}).get("developerId") == identity.email
+    ]
+
+
 @router.get("/analytics", response_model=Dict[str, Any])
 async def get_jit_anti_abuse_analytics(
     _identity: Identity = Depends(require_permission(perm.P_JIT_READ)),
@@ -164,9 +177,8 @@ async def create_web_jit_session(
 async def revoke_web_jit_session(
     app_name: str,
     request: Request,
-    identity: Identity = Depends(require_permission(perm.P_JIT_REVOKE)),
+    identity: Identity = Depends(require_permission(perm.P_JIT_REQUEST)),
 ):
-    # Allow self-revoke even without P_JIT_REVOKE: anyone may revoke their own.
     email = identity.email
     cache_key = f"webjit:{email}:{app_name}"
 

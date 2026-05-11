@@ -129,7 +129,7 @@ api.interceptors.response.use(
         details: durationMs ? { durationMs } : null,
         type: 'warning',
       })
-      const backoff = new Promise((resolve) => setTimeout(resolve, nextRetryCount * 1000))
+      const backoff = new Promise((resolve) => setTimeout(resolve, 2 ** (nextRetryCount - 1) * 1000))
       await backoff
       return api(config)
     }

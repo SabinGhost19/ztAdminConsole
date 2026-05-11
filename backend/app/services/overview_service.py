@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from collections import Counter
 import logging
 from typing import Any
@@ -127,11 +128,13 @@ def _build_recent_events(
 
 async def get_cluster_overview() -> dict[str, Any]:
     logger.info("Building cluster overview payload")
-    raw_ztas = await scanner.list_custom_resources(plural=ZTA_PLURAL)
-    raw_ztss = await scanner.list_custom_resources(plural=ZTS_PLURAL)
-    raw_scas = await scanner.list_custom_resources(plural=SCA_PLURAL, cluster_scoped=True)
-    raw_jits = await scanner.list_custom_resources(plural=JIT_PLURAL)
-    raw_pods = await scanner.list_pods()
+    raw_ztas, raw_ztss, raw_scas, raw_jits, raw_pods = await asyncio.gather(
+        scanner.list_custom_resources(plural=ZTA_PLURAL),
+        scanner.list_custom_resources(plural=ZTS_PLURAL),
+        scanner.list_custom_resources(plural=SCA_PLURAL, cluster_scoped=True),
+        scanner.list_custom_resources(plural=JIT_PLURAL),
+        scanner.list_pods(),
+    )
 
     ztas = [serialize_zta_resource(item) for item in raw_ztas]
     ztss = [serialize_zts_resource(item) for item in raw_ztss]

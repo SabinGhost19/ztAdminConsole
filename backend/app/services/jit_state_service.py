@@ -162,11 +162,13 @@ def expire_session(session_id: str, reason: str = "Auto-expired") -> bool:
         if session_data.get("state") not in [STATE_PENDING, STATE_ACTIVE]:
             return False  # Already in terminal state
         
+        was_active = session_data.get("state") == STATE_ACTIVE
+
         now = datetime.now(timezone.utc)
         session_data["state"] = STATE_EXPIRED
-        session_data["revoked_at"] = now.isoformat()
+        session_data["expired_at"] = now.isoformat()
         session_data["reason"] = reason
-        
+
         write_state(
             cache_key=cache_key,
             payload=session_data,
@@ -174,9 +176,8 @@ def expire_session(session_id: str, reason: str = "Auto-expired") -> bool:
             namespace="default",
             resource_name=session_id,
         )
-        
-        # Revoke Keycloak access if it was active
-        if session_data.get("state") == STATE_ACTIVE:
+
+        if was_active:
             from app.services.keycloak_service import revoke_jit_access
             revoke_jit_access(session_data["user_email"], session_data["app_name"])
         
@@ -238,8 +239,8 @@ def cleanup_expired_sessions(days_to_keep: int = 7) -> int:
             if state not in [STATE_EXPIRED, STATE_REVOKED]:
                 continue
             
-            # Check when it was revoked/expired
-            timestamp_str = session.get("revoked_at") or session.get("approved_at")
+            # Check when it was revoked/expired — never fall back to approved_at
+            timestamp_str = session.get("revoked_at") or session.get("expired_at")
             if timestamp_str:
                 timestamp = datetime.fromisoformat(timestamp_str)
                 if timestamp < cutoff_date:

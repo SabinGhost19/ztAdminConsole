@@ -15,8 +15,8 @@ data:
       index index.html;
 
       location /api/ {
-        set $backend_upstream "http://{{ include "zero-trust-dashboard.fullname" . }}-backend.{{ .Release.Namespace }}.svc.cluster.local:8000";
-        proxy_pass $backend_upstream/api/;
+        set $backend_host "{{ include "zero-trust-dashboard.fullname" . }}-backend.{{ .Release.Namespace }}.svc.cluster.local:8000";
+        proxy_pass http://$backend_host$request_uri;
         proxy_http_version 1.1;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;

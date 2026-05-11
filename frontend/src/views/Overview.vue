@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { computed, onMounted } from 'vue'
 import { useDashboardStore } from '../store/dashboard'
+import { useAuthStore } from '../store/auth'
 
 const dashboardStore = useDashboardStore()
+const auth = useAuthStore()
 
 const isLoading = computed(() => dashboardStore.loadingOverview)
 const summary = computed(() => dashboardStore.summary)
@@ -13,6 +15,9 @@ const jitAnalytics = computed(() => dashboardStore.jitAnalytics || { activeSessi
 
 onMounted(() => {
   dashboardStore.fetchOverview(true).catch(() => undefined)
+  if (auth.can('jit:read')) {
+    dashboardStore.fetchJitAnalytics()
+  }
 })
 </script>
 
