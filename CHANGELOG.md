@@ -1,3 +1,10 @@
+## [1.8.1](https://github.com/SabinGhost19/ztAdminConsole/compare/v1.8.0...v1.8.1) (2026-05-11)
+
+
+### Bug Fixes
+
+* RBAC guards, JIT token flow, ZTA polling stability and operator namespace alignment ([78b3059](https://github.com/SabinGhost19/ztAdminConsole/commit/78b3059fa4aa3c435473e0c5e338f93595f1d785))
+
 # [1.8.0](https://github.com/SabinGhost19/ztAdminConsole/compare/v1.7.0...v1.8.0) (2026-05-05)
 
 
