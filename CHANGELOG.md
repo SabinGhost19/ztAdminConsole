@@ -1,3 +1,10 @@
+## [1.9.2](https://github.com/SabinGhost19/ztAdminConsole/compare/v1.9.1...v1.9.2) (2026-05-12)
+
+
+### Bug Fixes
+
+* **integrity:** robust Trivy severity hint in Alert sub-task ([6670103](https://github.com/SabinGhost19/ztAdminConsole/commit/6670103f51ac012821da0452995d24605ded84f9))
+
 ## [1.9.1](https://github.com/SabinGhost19/ztAdminConsole/compare/v1.9.0...v1.9.1) (2026-05-12)
 
 
