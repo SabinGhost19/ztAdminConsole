@@ -134,7 +134,8 @@ async def get_jit_analytics() -> dict[str, Any]:
 
     for item in items:
         summary = item.get("summary", {}) or {}
-        developer_id = str(summary.get("developerId", "Unknown") or "Unknown")
+        raw_id = summary.get("developerId") or (item.get("metadata", {}) or {}).get("annotations", {}).get("jit.devsecops/user") or ""
+        developer_id = str(raw_id).strip() or "unknown"
         state = str(summary.get("state", "PENDING") or "PENDING")
         status_counter[state] += 1
         identities[developer_id] += 1
@@ -144,7 +145,7 @@ async def get_jit_analytics() -> dict[str, Any]:
     active_sessions = sum(1 for item in items if str((item.get("summary", {}) or {}).get("state", "")).upper() in {"ACTIVE", "APPROVED"})
     session_rows = [
         {
-            "identity": (item.get("summary", {}) or {}).get("developerId"),
+            "identity": (item.get("summary", {}) or {}).get("developerId") or (item.get("metadata", {}) or {}).get("annotations", {}).get("jit.devsecops/user") or "unknown",
             "namespace": (item.get("summary", {}) or {}).get("targetNamespace"),
             "role": (item.get("summary", {}) or {}).get("requestedRole"),
             "state": (item.get("summary", {}) or {}).get("state"),

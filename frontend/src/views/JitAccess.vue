@@ -40,7 +40,7 @@ const policyForm = ref({
 const form = ref({
   namespace: 'default',
   role: 'view',
-  duration: 60,
+  duration: 60,  // minimum 10 — K8s TokenRequest requires >= 600s
   reason: ''
 })
 
@@ -49,6 +49,8 @@ const roles = ['view', 'edit', 'admin']
 const activeTab = ref('k8s')
 const webApps = ref<any[]>([])
 const isLoadingWebApps = ref(false)
+const k8sNamespaces = ref<string[]>(['default'])
+const isLoadingNamespaces = ref(false)
 
 const webForm = ref({
   appName: '',
@@ -72,10 +74,26 @@ const now = ref(Date.now())
 async function fetchJitSessions() {
   isLoadingSessions.value = true
   try {
-    const response = await api.get('/jit/sessions/state')
-    jitSessions.value = response.data.sessions || []
-    const statsResponse = await api.get('/jit/sessions/stats')
-    jitSessionStats.value = statsResponse.data.stats || {}
+    if (canReadAll.value) {
+      await jitStore.fetchSessions()
+    } else {
+      await jitStore.fetchMySessions()
+    }
+    // Stats derived from CRD sessions
+    const s = jitStore.sessions
+    jitSessionStats.value = {
+      total_sessions: s.length,
+      pending: s.filter(x => x.status === 'PENDING').length,
+      active: s.filter(x => x.status === 'ACTIVE' || x.status === 'APPROVED').length,
+      expired: s.filter(x => x.status === 'EXPIRED' || x.status === 'REVOKED').length,
+    }
+    jitSessions.value = s.map(sess => ({
+      session_id: sess.id,
+      user_email: sess.user,
+      app_name: sess.namespace,
+      state: sess.status,
+      requested_at: sess.expiresAt,
+    }))
   } catch (err) {
     console.error('Failed to fetch JIT sessions', err)
   } finally {
@@ -83,35 +101,30 @@ async function fetchJitSessions() {
   }
 }
 
-async function approveJitSession(sessionId: string) {
-  isApprovingSession.value = true
-  try {
-    await api.post(`/jit/sessions/${sessionId}/approve`)
-    notifyStore.addAlert({
-      error_code: 'SESSION_APPROVED',
-      message: `Session ${sessionId} approved.`,
-      technical_details: `The user can now access their requested resource.`,
-      component: 'JIT_MODULE',
-      trace_id: Math.random().toString(36).substring(2),
-      action_required: '',
-      type: 'warning'
-    })
-    await fetchJitSessions()
-  } catch (err) {
-    console.error('Failed to approve session', err)
-  } finally {
-    isApprovingSession.value = false
-  }
+async function approveJitSession(_sessionId: string) {
+  // K8s JIT sessions are approved automatically by the operator — no manual approval needed.
+  notifyStore.addAlert({
+    error_code: 'SESSION_AUTO_APPROVED',
+    message: 'Sesiunile K8s JIT sunt aprobate automat de operator.',
+    technical_details: 'Operatorul emite tokenul imediat ce cererea este acceptată de engine-ul anti-abuse.',
+    component: 'JIT_MODULE',
+    trace_id: Math.random().toString(36).substring(2),
+    action_required: '',
+    type: 'warning'
+  })
 }
 
 async function revokeJitSessionExplicit(sessionId: string) {
   isRevoking.value = true
   try {
-    await api.delete(`/jit/sessions/${sessionId}/revoke`)
+    const sess = jitStore.sessions.find(s => s.id === sessionId)
+    if (sess) {
+      await jitStore.revokeSession(sess.namespace, sess.id)
+    }
     notifyStore.addAlert({
       error_code: 'SESSION_REVOKED',
-      message: `Session ${sessionId} revoked.`,
-      technical_details: `The user's access has been immediately revoked.`,
+      message: `Sesiunea ${sessionId} a fost revocată.`,
+      technical_details: `RoleBinding-ul a fost șters din cluster.`,
       component: 'JIT_MODULE',
       trace_id: Math.random().toString(36).substring(2),
       action_required: '',
@@ -138,13 +151,23 @@ async function fetchWebApps() {
   }
 }
 
+async function fetchK8sNamespaces() {
+  isLoadingNamespaces.value = true
+  try {
+    const response = await api.get('/jit/namespaces')
+    k8sNamespaces.value = response.data.namespaces || ['default']
+  } catch (err) {
+    console.error('Failed to fetch namespaces', err)
+  } finally {
+    isLoadingNamespaces.value = false
+  }
+}
+
 onMounted(() => {
+  fetchJitSessions()
+  fetchK8sNamespaces()
   if (canReadAll.value) {
-    jitStore.fetchSessions()
-    fetchJitSessions()
     loadJitAdmin().catch(() => undefined)
-  } else {
-    jitStore.fetchMySessions()
   }
   if (auth.can('apps:read')) {
     fetchWebApps()
@@ -164,11 +187,7 @@ async function pollUntilActive(targetNamespace: string, maxWaitMs = 30000) {
   const deadline = Date.now() + maxWaitMs
   while (Date.now() < deadline) {
     await new Promise((r) => setTimeout(r, interval))
-    if (canReadAll.value) {
-      await jitStore.fetchSessions()
-    } else {
-      await jitStore.fetchMySessions()
-    }
+    await fetchJitSessions()
     const active = jitStore.sessions.find(
       (s) => s.namespace === targetNamespace && s.tokenIssued && s.commandToUse
     )
@@ -189,6 +208,7 @@ async function submitRequest() {
     await dashboardStore.fetchOverview()
     await loadJitAdmin()
     generatedCommand.value = `# Waiting for operator... (~2s)`
+    activeTab.value = 'sessions'
     pollUntilActive(form.value.namespace)
     notifyStore.addAlert({
         error_code: 'JIT_CREATED',
@@ -256,6 +276,7 @@ async function confirmRevoke() {
   isRevoking.value = true
   try {
     await jitStore.revokeSession(sessionToRevoke.value.namespace, sessionToRevoke.value.id)
+    await fetchJitSessions()
     await dashboardStore.fetchOverview(true)
     await loadJitAdmin()
     notifyStore.addAlert({
@@ -426,16 +447,18 @@ async function savePolicies() {
             <v-window v-model="activeTab" :touch="false">
               <!-- Kubernetes RBAC Tab -->
               <v-window-item value="k8s">
-                <v-text-field 
+                <v-select
                   v-model="form.namespace"
-                  density="compact" 
-                  label="Target Namespace" 
-                  variant="outlined" 
-                  placeholder="e.g., default"
+                  density="compact"
+                  label="Target Namespace"
+                  variant="outlined"
+                  :items="k8sNamespaces"
+                  :loading="isLoadingNamespaces"
                   prepend-inner-icon="mdi-google-cloud"
                   hide-details="auto"
                   class="mb-4 mt-2"
-                ></v-text-field>
+                  no-data-text="No namespaces found"
+                ></v-select>
                 
                 <v-select 
                   v-model="form.role"
@@ -449,13 +472,13 @@ async function savePolicies() {
                 ></v-select>
                 
                 <div class="px-2 mt-6">
-                  <div class="text-caption text-secondary mb-1">Duration: {{ form.duration }} minutes</div>
-                  <v-slider 
+                  <div class="text-caption text-secondary mb-1">Duration: {{ form.duration }} minutes <span class="text-error text-caption">(min 10 min — K8s TokenRequest limit)</span></div>
+                  <v-slider
                     v-model="form.duration"
-                    color="primary" 
-                    min="5" 
-                    max="120" 
-                    step="5" 
+                    color="primary"
+                    min="10"
+                    max="120"
+                    step="10"
                     thumb-label
                     hide-details
                   ></v-slider>
@@ -578,30 +601,18 @@ async function savePolicies() {
                       <div class="d-flex justify-space-between align-center">
                         <div class="flex-grow-1">
                           <div class="text-body-2 font-weight-medium">{{ session.user_email }}</div>
-                          <div class="text-caption text-secondary">{{ session.app_name }} • {{ session.state }}</div>
-                          <div class="text-caption text-secondary mt-1">{{ new Date(session.requested_at).toLocaleString() }}</div>
+                          <div class="text-caption text-secondary">ns: {{ session.app_name }} • {{ session.state }}</div>
+                          <div class="text-caption text-secondary mt-1">Expiră: {{ session.requested_at ? new Date(session.requested_at).toLocaleString() : '—' }}</div>
                         </div>
                         <div class="text-right">
-                          <v-chip :color="session.state === 'PENDING' ? 'warning' : session.state === 'ACTIVE' ? 'success' : 'error'" size="small" variant="flat" class="mb-2">
+                          <v-chip
+                            :color="session.state === 'PENDING' ? 'warning' : (session.state === 'ACTIVE' || session.state === 'APPROVED') ? 'success' : 'error'"
+                            size="small" variant="flat" class="mb-2"
+                          >
                             {{ session.state }}
                           </v-chip>
-                          <div v-if="session.state === 'PENDING'" class="d-flex gap-1">
-                            <v-tooltip v-if="!canApprove" text="Necesită rolul platform-engineer sau security-auditor." location="left">
-                              <template v-slot:activator="{ props: tProps }">
-                                <span v-bind="tProps">
-                                  <v-btn size="x-small" variant="flat" color="success" disabled>Approve</v-btn>
-                                </span>
-                              </template>
-                            </v-tooltip>
-                            <v-btn v-else size="x-small" variant="flat" color="success" @click="approveJitSession(session.session_id)" :loading="isApprovingSession">
-                              Approve
-                            </v-btn>
-                            <v-btn v-if="canRevoke" size="x-small" variant="flat" color="error" @click="() => { sessionToRevoke = session; isConfirmRevokeOpen = true }">
-                              Deny
-                            </v-btn>
-                          </div>
-                          <div v-else-if="session.state === 'ACTIVE'" class="d-flex gap-1">
-                            <v-btn v-if="canRevoke" size="x-small" variant="flat" color="error" @click="() => { sessionToRevoke = session; isConfirmRevokeOpen = true }">
+                          <div v-if="session.state === 'ACTIVE' || session.state === 'APPROVED'" class="d-flex gap-1">
+                            <v-btn v-if="canRevoke" size="x-small" variant="flat" color="error" @click="revokeJitSessionExplicit(session.session_id)">
                               Revoke
                             </v-btn>
                           </div>

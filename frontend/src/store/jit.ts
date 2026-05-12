@@ -76,7 +76,7 @@ function mapSession(crt: any): JitSession {
   return {
     id: crt.metadata?.name || crt.summary?.sessionId || 'jit-unknown',
     namespace: crt.metadata?.namespace || crt.summary?.targetNamespace || 'default',
-    user: crt.summary?.developerId || crt.metadata?.annotations?.['jit.devsecops/user'] || 'Unknown',
+    user: (crt.summary?.developerId || '').trim() || (crt.metadata?.annotations?.['jit.devsecops/user'] || '').trim() || crt.metadata?.name || 'Unknown',
     role: crt.summary?.requestedRole || 'view',
     duration: parseDurationMinutes(crt.summary?.duration),
     expiresAt: crt.summary?.expiresAt || new Date().toISOString(),

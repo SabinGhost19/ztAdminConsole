@@ -15,7 +15,8 @@ router = APIRouter()
 class JitCreateIn(BaseModel):
     namespace: str = Field("default", title="Numele namespace-ului destinație")
     role: str = Field(..., title="Rolul JIT cerut")
-    duration: int = Field(60, ge=5, le=120)
+    # Kubernetes TokenRequest API requires spec.expirationSeconds >= 600 (10 minutes)
+    duration: int = Field(60, ge=10, le=120)
 
 
 class AntiAbuseIn(BaseModel):
@@ -87,10 +88,11 @@ async def create_jit_session(
 
     name = f"jit-{uuid.uuid4().hex[:6]}"
 
+    user_label = identity.email or identity.preferred_username or identity.subject or "unknown"
     res = await jit_service.create_jit_request(
         namespace=data.namespace,
         name=name,
-        user_email=identity.email,
+        user_email=user_label,
         duration=data.duration,
         role=data.role
     )
@@ -143,6 +145,21 @@ async def aggregate_jit_sessions(
 from app.services.keycloak_service import grant_jit_access as kc_grant, revoke_jit_access as kc_revoke
 from app.core.state_db import write_state, read_state, delete_state
 from datetime import datetime, timedelta, timezone
+
+@router.get("/namespaces", response_model=Dict[str, Any])
+async def list_k8s_namespaces(
+    _identity: Identity = Depends(require_permission(perm.P_JIT_REQUEST)),
+):
+    """List all namespaces available for JIT access targeting."""
+    from app.core.k8s import get_core_api
+    try:
+        core = get_core_api()
+        ns_list = await core.list_namespace()
+        namespaces = sorted(ns.metadata.name for ns in ns_list.items)
+    except Exception:
+        namespaces = ["default"]
+    return {"status": "success", "namespaces": namespaces}
+
 
 class WebJitCreateIn(BaseModel):
     app_name: str = Field(..., title="Numele aplicatiei web (ex: demo-api)")
