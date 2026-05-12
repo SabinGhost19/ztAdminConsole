@@ -451,6 +451,31 @@ def _build_reconcile_flow(application: dict[str, Any], policy: dict[str, Any] | 
     }
 
 
+_SEVERITY_ORDER = ("CRITICAL", "HIGH", "MEDIUM", "LOW", "UNKNOWN", "NONE")
+
+
+def _max_severity_from_counts(counts: dict[str, Any]) -> str:
+    """Highest non-zero severity bucket present in a severityCounts dict."""
+    if not isinstance(counts, dict):
+        return ""
+    for sev in _SEVERITY_ORDER:
+        try:
+            if int(counts.get(sev, counts.get(sev.lower(), 0)) or 0) > 0:
+                return sev
+        except (TypeError, ValueError):
+            continue
+    return ""
+
+
+def _severity_from_reason(text: str) -> str:
+    """Pull a severity hint out of an error/violation message as a fallback."""
+    upper = (text or "").upper()
+    for sev in ("CRITICAL", "HIGH", "MEDIUM", "LOW"):
+        if sev in upper:
+            return sev
+    return ""
+
+
 def _build_stage_subtasks(
     stage_id: str,
     stage_status: str,
@@ -498,8 +523,22 @@ def _build_stage_subtasks(
         elif "trivy-scan-failed" in err:
             trivy = {"status": "failed", "detail": "Trivy scanner returned non-zero exit code."}
         elif security_state == "Alert":
-            highest = details.get("highest", "")
-            trivy = {"status": "warning", "detail": f"Vulnerabilities above threshold present (highest: {highest or '?'}) — runtimeEnforcement.onVulnerabilityFound=Alert allows deploy with warning."}
+            # Derive highest severity from multiple sources: explicit
+            # `status.details.highest`, then `severityCounts`, then the
+            # violation reason string as a last resort. Avoids the bare "?"
+            # we used to show when the operator overwrote details on a
+            # follow-up reconcile.
+            highest = (
+                str(details.get("highest", "") or "").strip()
+                or _max_severity_from_counts(details.get("severityCounts") or {})
+                or _severity_from_reason(" ".join(str(v) for v in (status.get("activeViolations") or [])))
+                or "above threshold"
+            )
+            threshold = str(details.get("threshold", "") or "").strip() or (policy_summary.get("maxAllowedSeverity") or "policy threshold")
+            trivy = {
+                "status": "warning",
+                "detail": f"Vulnerabilities above threshold present (highest: {highest}, threshold: {threshold}) — runtimeEnforcement.onVulnerabilityFound=Alert allows deploy with warning.",
+            }
         elif past_supply_chain:
             highest = details.get("highest", "NONE")
             trivy = {"status": "success", "detail": f"No vulnerabilities above policy threshold (highest found: {highest})."}
