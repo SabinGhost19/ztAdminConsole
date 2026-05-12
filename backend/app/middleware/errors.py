@@ -53,6 +53,16 @@ def _error_payload(
     )
 
 async def global_exception_handler(request: Request, exc: Exception):
+    # Python 3.11+ + Starlette BaseHTTPMiddleware: anyio wraps route handler
+    # exceptions inside an ExceptionGroup. Unwrap single-item groups so the
+    # specific handlers below (ApiException, HTTPException, etc.) can match.
+    while hasattr(exc, "exceptions") and exc.exceptions:
+        inner = exc.exceptions
+        if len(inner) == 1:
+            exc = inner[0]
+        else:
+            break
+
     trace_id = request.headers.get("X-Request-ID", getattr(request.state, "trace_id", str(uuid.uuid4())))
     
     # Prinde Pydantic Validation Error (Input gresit form ZTA/JIT builder)

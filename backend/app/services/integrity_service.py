@@ -365,7 +365,7 @@ def _build_reconcile_flow(application: dict[str, Any], policy: dict[str, Any] | 
         if stage_id == "provisioning":
             if has_error and phase in {"Degraded", "Failed_SupplyChain"}:
                 return "failed"
-            if phase in {"Provisioning", "Validating"}:
+            if phase == "Provisioning":
                 return "running"
             if phase in {"Running", "Degraded"}:
                 return "success"
@@ -377,7 +377,7 @@ def _build_reconcile_flow(application: dict[str, Any], policy: dict[str, Any] | 
                 return "skipped"
             if has_error and phase in {"Degraded", "Failed_SupplyChain"}:
                 return "failed"
-            if phase in {"Provisioning", "Validating"}:
+            if phase == "Provisioning":
                 return "running"
             return "success" if phase in {"Running", "Degraded"} else "pending"
 
@@ -388,7 +388,9 @@ def _build_reconcile_flow(application: dict[str, Any], policy: dict[str, Any] | 
                 return "warning"
             if phase == "Running" and trust_level == "Verified":
                 return "success"
-            if phase in {"Pending", "Provisioning", "Validating"}:
+            if phase == "Running":
+                return "warning"
+            if phase == "Provisioning":
                 return "running"
             return "pending"
 
@@ -405,13 +407,40 @@ def _build_reconcile_flow(application: dict[str, Any], policy: dict[str, Any] | 
         {"id": "ready", "title": "Operational State", "description": "Final security state exposed to dashboard."},
     ]
 
+    # User-facing waiting messages shown under spinning stages so the user
+    # understands why a step is taking time (reduces anxiety vs. silent spin).
+    last_error = str(summary.get("lastError") or "").strip()
+    waiting_messages = {
+        "provenance": (
+            "Waiting for CI/CD pipeline to issue a VBBI voucher (status.trustLevel ≠ Verified)."
+            if security_state != "WaitingForPolicy" else
+            "Waiting for the referenced SupplyChainAttestation to be created in the cluster."
+        ),
+        "supply-chain": "Running cosign verify + trivy image scan (up to 5 minutes for large images).",
+        "provisioning": "Applying Deployment, Service, NetworkPolicy and optional Istio/Falco resources.",
+    }
+    # If the operator reported WaitingForPolicy state, the provenance stage
+    # is not the right place — bubble that message up to the supply-chain stage.
+    if security_state == "WaitingForPolicy" and last_error:
+        waiting_messages["supply-chain"] = last_error
+
     decorated = []
     active = None
     for stage in stages:
         status_value = _stage_status(stage["id"])
         if active is None and status_value == "running":
             active = stage["id"]
-        decorated.append({**stage, "status": status_value})
+        stage_payload = {**stage, "status": status_value}
+        if status_value == "running" and stage["id"] in waiting_messages:
+            stage_payload["message"] = waiting_messages[stage["id"]]
+        subtasks = _build_stage_subtasks(
+            stage["id"], status_value, application, policy, provisioning_plan,
+            phase=phase, trust_level=trust_level, security_state=security_state,
+            last_error=last_error,
+        )
+        if subtasks:
+            stage_payload["subtasks"] = subtasks
+        decorated.append(stage_payload)
 
     return {
         "phase": phase,
@@ -420,6 +449,174 @@ def _build_reconcile_flow(application: dict[str, Any], policy: dict[str, Any] | 
         "activeStage": active,
         "stages": decorated,
     }
+
+
+def _build_stage_subtasks(
+    stage_id: str,
+    stage_status: str,
+    application: dict[str, Any],
+    policy: dict[str, Any] | None,
+    provisioning_plan: list[dict[str, Any]],
+    *,
+    phase: str,
+    trust_level: str,
+    security_state: str,
+    last_error: str,
+) -> list[dict[str, Any]]:
+    """Granular forensics breakdown shown when the user clicks a stage node.
+
+    Surfaces *why* a high-level step failed (e.g. "Cosign ok but Trivy
+    found a CRITICAL CVE") so the dashboard becomes a diagnostic tool
+    rather than a binary pass/fail display.
+    """
+    err = last_error.lower()
+    status = application.get("status", {}) or {}
+    summary = application.get("summary", {}) or {}
+    attestations = status.get("attestations", {}) or {}
+    details = status.get("details", {}) or {}
+    policy_summary = (policy or {}).get("summary", {}) or {}
+    past_supply_chain = phase in {"Provisioning", "Running", "Degraded"}
+
+    if stage_id == "supply-chain":
+        # Cosign keyless verification
+        if "cosign" in err and ("verification" in err or "verify" in err or "signature" in err):
+            cosign = {"status": "failed", "detail": "Signature verification failed against all trusted issuers."}
+        elif past_supply_chain or security_state == "Alert":
+            cosign = {"status": "success", "detail": "Image signature valid (keyless OIDC via GitHub Actions)."}
+        elif phase == "Validating":
+            cosign = {"status": "running", "detail": "Verifying signature against trusted OIDC identities..."}
+        else:
+            cosign = {"status": "pending", "detail": "Awaiting supply-chain scan."}
+
+        # Trivy vulnerability scan
+        if "trivy-threshold-exceeded" in err:
+            highest = details.get("highest", "?")
+            threshold = details.get("threshold", "?")
+            trivy = {"status": "failed", "detail": f"Found {highest} severity vulnerability — policy threshold is {threshold}."}
+        elif "trivy-fixable" in err:
+            trivy = {"status": "failed", "detail": "Fixable vulnerabilities detected (failOnFixable=true blocks deploy)."}
+        elif "trivy-scan-failed" in err:
+            trivy = {"status": "failed", "detail": "Trivy scanner returned non-zero exit code."}
+        elif security_state == "Alert":
+            highest = details.get("highest", "")
+            trivy = {"status": "warning", "detail": f"Vulnerabilities above threshold present (highest: {highest or '?'}) — runtimeEnforcement.onVulnerabilityFound=Alert allows deploy with warning."}
+        elif past_supply_chain:
+            highest = details.get("highest", "NONE")
+            trivy = {"status": "success", "detail": f"No vulnerabilities above policy threshold (highest found: {highest})."}
+        elif cosign["status"] == "running":
+            trivy = {"status": "pending", "detail": "Awaiting cosign to pass."}
+        elif phase == "Validating":
+            trivy = {"status": "running", "detail": "Scanning image for CVEs via Trivy..."}
+        else:
+            trivy = {"status": "pending", "detail": "Awaiting supply-chain scan."}
+
+        return [
+            {"id": "cosign", "title": "Cosign Keyless Verification", **cosign},
+            {"id": "trivy", "title": "Trivy Vulnerability Scan", **trivy},
+        ]
+
+    if stage_id == "attestation":
+        out = []
+        resolved = str(attestations.get("resolvedImage", "")).strip()
+        out.append({
+            "id": "digest",
+            "title": "Image Digest Resolution",
+            "status": "success" if resolved else ("running" if phase == "Validating" else "pending"),
+            "detail": (resolved[:80] + "...") if len(resolved) > 80 else (resolved or "cosign triangulate <image>"),
+        })
+        if bool(policy_summary.get("enforceSBOM")):
+            sbom_packages = attestations.get("sbomPackages", []) or []
+            sbom_digest = attestations.get("sbomDigest", "")
+            out.append({
+                "id": "sbom",
+                "title": "SBOM Attestation",
+                "status": "success" if sbom_digest else ("running" if phase == "Validating" else "pending"),
+                "detail": f"{len(sbom_packages)} packages attested" if sbom_digest else "Awaiting verify-attestation spdxjson",
+            })
+        policy_digest = attestations.get("policyDigest", "")
+        if policy_summary.get("requireVoucher") or policy_digest:
+            out.append({
+                "id": "policy-attestation",
+                "title": "Custom ZTA Policy Attestation",
+                "status": "success" if policy_digest else ("running" if phase == "Validating" else "pending"),
+                "detail": f"sha256:{policy_digest[:24]}..." if policy_digest else "Awaiting verify-attestation custom-zta-policy/v1",
+            })
+        expected = str(summary.get("expectedInfraHash", "") or "").strip()
+        computed = str(summary.get("computedInfraHash", "") or "").strip()
+        hash_mismatch = bool(summary.get("hasHashMismatch"))
+        if expected or computed:
+            out.append({
+                "id": "manifest-hash",
+                "title": "Manifest Hash Match",
+                "status": "failed" if hash_mismatch else "success",
+                "detail": (
+                    f"MISMATCH — expected={expected[:16]}... computed={computed[:16]}..."
+                    if hash_mismatch else
+                    f"Match — sha256:{(computed or expected)[:24]}..."
+                ),
+            })
+        return out
+
+    if stage_id == "provisioning":
+        if phase == "Running":
+            base = "success"
+        elif phase == "Provisioning":
+            base = "running"
+        elif phase in {"Degraded", "Failed_SupplyChain"} and last_error:
+            base = "failed"
+        else:
+            base = "pending"
+        return [
+            {
+                "id": item["id"],
+                "title": item["title"],
+                "status": "skipped" if not item.get("enabled") else base,
+                "detail": item.get("kind", "") + (" — " + str(item.get("reason", "")) if item.get("reason") else ""),
+            }
+            for item in provisioning_plan
+        ]
+
+    if stage_id == "provenance":
+        provenance = status.get("provenance", {}) or {}
+        hmac = provenance.get("hmacChain", {}) or {}
+        merkle = provenance.get("merkle", {}) or {}
+        out: list[dict[str, Any]] = []
+        voucher_ts = provenance.get("verifiedAt")
+        if trust_level == "UntrustedProvenance":
+            voucher_status, voucher_detail = "failed", str(provenance.get("reason") or "Provenance verification rejected by enforcer.")
+        elif voucher_ts:
+            voucher_status, voucher_detail = "success", f"Voucher verified at {voucher_ts}"
+        elif stage_status == "running":
+            voucher_status, voucher_detail = "running", "Waiting for Provenance-Enforcer to mark trustLevel=Verified"
+        else:
+            voucher_status, voucher_detail = "pending", "No voucher issued yet"
+        out.append({"id": "voucher", "title": "VBBI Voucher Presence", "status": voucher_status, "detail": voucher_detail})
+        if hmac:
+            out.append({
+                "id": "hmac",
+                "title": "HMAC Chain",
+                "status": "success" if hmac.get("verified") else "pending",
+                "detail": f"{hmac.get('steps', 0)} CI/CD steps verified" if hmac.get("verified") else "Awaiting hmac chain validation",
+            })
+        if merkle:
+            out.append({
+                "id": "merkle",
+                "title": "Merkle Root",
+                "status": "success" if merkle.get("verified") else "pending",
+                "detail": f"leafCount={merkle.get('leafCount', 0)} root={(merkle.get('root') or '')[:16]}..." if merkle.get("verified") else "Awaiting merkle validation",
+            })
+        return out
+
+    if stage_id == "runtime":
+        runtime_enabled = any(item.get("id") == "falco-rule-configmap" and item.get("enabled") for item in provisioning_plan)
+        if not runtime_enabled:
+            return [{"id": "runtime-disabled", "title": "Runtime Enforcement", "status": "skipped", "detail": "spec.runtimeSecurity not declared — Falco/Talon resources skipped."}]
+        return [
+            {"id": "falco-rule", "title": "Falco Custom Rule ConfigMap", "status": "success" if phase in {"Running", "Degraded"} else ("running" if phase == "Provisioning" else "pending"), "detail": f"falco-rule-{summary.get('image', 'app')[:30]}"},
+            {"id": "talon-patch", "title": "Falco Talon Rule Patch", "status": "success" if phase in {"Running", "Degraded"} else ("running" if phase == "Provisioning" else "pending"), "detail": "Patched falco-talon-rules ConfigMap"},
+        ]
+
+    return []
 
 
 async def _build_runtime_forensics(application: dict[str, Any]) -> dict[str, Any]:
@@ -613,17 +810,16 @@ async def list_integrity_applications() -> list[dict[str, Any]]:
 
 async def get_application_integrity(namespace: str, name: str) -> dict[str, Any]:
     logger.info("Fetching application integrity", extra={"details": {"namespace": namespace, "name": name}})
-    cached_record = get_integrity_snapshot_record(namespace, name)
-    cached_payload = (cached_record or {}).get("payload") if cached_record else None
-    if isinstance(cached_payload, dict):
-        logger.info("Serving integrity payload from in-memory SQLite snapshot", extra={"details": {"namespace": namespace, "name": name}})
-        return _with_cache_details(cached_payload, cached_record)
 
+    # Always fetch fresh K8s state so the dashboard reflects operator progress
+    # in real time and correctly handles delete+recreate of the same ZTA name.
     payload = await _collect_integrity_payload(namespace, name, force_oci=False)
     if payload:
         set_integrity_snapshot(namespace, name, payload)
         cached_record = get_integrity_snapshot_record(namespace, name)
-    return _with_cache_details(payload, cached_record)
+        return _with_cache_details(payload, cached_record)
+
+    return _with_cache_details({}, None)
 
 
 async def revalidate_application_integrity(namespace: str, name: str) -> dict[str, Any]:

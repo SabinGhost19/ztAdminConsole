@@ -108,9 +108,25 @@ async def update_jit_policies(payload: dict[str, Any]) -> dict[str, Any]:
 
 async def get_jit_analytics() -> dict[str, Any]:
     logger.info("Computing JIT analytics")
-    raw_items = await scanner.list_custom_resources(plural=JIT_PLURAL)
+    try:
+        raw_items = await scanner.list_custom_resources(plural=JIT_PLURAL)
+    except Exception as exc:
+        logger.warning("Failed to list JIT requests for analytics (CRD unavailable?): %s", exc)
+        raw_items = []
     items = [serialize_jit_request(item) for item in raw_items]
-    policies = await get_jit_policies()
+    try:
+        policies = await get_jit_policies()
+    except Exception as exc:
+        logger.warning("Failed to load JIT policies for analytics: %s", exc)
+        policies = {
+            "blockedUsers": [],
+            "antiAbuse": {
+                "maxActiveSessions": 1,
+                "cooldownMinutes": 15,
+                "maxRequestsPerDay": 5,
+                "maxDurationMinutes": 120,
+            },
+        }
 
     status_counter = Counter()
     denied_counter = Counter()

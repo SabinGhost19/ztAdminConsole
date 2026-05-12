@@ -16,8 +16,8 @@ async def list_jit_requests(namespace: str = "") -> list:
         logger.info("Listed JIT requests successfully", extra={"details": {"namespace": namespace or None, "count": len(serialized)}})
         return serialized
     except Exception as e:
-        logger.exception(f"Eroare listare JIT Request CRDs: {e}", extra={"details": {"namespace": namespace or None}})
-        raise e
+        logger.warning("JIT CRD unavailable, returning empty list: %s", e, extra={"details": {"namespace": namespace or None}})
+        return []
 
 async def create_jit_request(namespace: str, name: str, user_email: str, duration: int, role: str) -> dict:
     logger.info(

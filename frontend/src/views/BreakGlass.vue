@@ -67,17 +67,19 @@ interface Analytics {
   agents: { total: number; healthy: number }
 }
 
-const activeTab = ref<'overview' | 'issue' | 'sessions' | 'nodes' | 'audit'>('overview')
+const activeTab = ref<'overview' | 'issue' | 'sessions' | 'nodes' | 'audit' | 'policies'>('overview')
 
 const sessions = ref<Session[]>([])
 const nodes = ref<NodeStatus[]>([])
 const auditEvents = ref<AuditEvent[]>([])
+const policies = ref<any[]>([])
 const analytics = ref<Analytics | null>(null)
 
 const loadingSessions = ref(false)
 const loadingNodes = ref(false)
 const loadingAudit = ref(false)
 const loadingAnalytics = ref(false)
+const loadingPolicies = ref(false)
 const issuing = ref(false)
 const revokingJti = ref<string | null>(null)
 
@@ -127,6 +129,14 @@ const auditHeaders = [
   { title: 'UID', key: 'uid' },
 ]
 
+const policiesHeaders = [
+  { title: 'Name', key: 'name' },
+  { title: 'Node Selector', key: 'nodeSelector' },
+  { title: 'Protected Paths', key: 'protectedPaths' },
+  { title: 'Mode', key: 'mode' },
+  { title: 'Max TTL', key: 'maxTtl' },
+]
+
 const filteredAudit = computed(() => auditEvents.value)
 
 const knownNodes = computed(() => {
@@ -134,6 +144,12 @@ const knownNodes = computed(() => {
   nodes.value.forEach((n) => set.add(n.node))
   sessions.value.forEach((s) => set.add(s.node))
   return Array.from(set).sort()
+})
+
+const maxDeniedPerNode = computed(() => {
+  if (!analytics.value?.audit.denied_per_node) return 0
+  const values = Object.values(analytics.value.audit.denied_per_node) as number[]
+  return values.length > 0 ? Math.max(...values) : 0
 })
 
 async function fetchAnalytics() {
@@ -187,8 +203,20 @@ async function fetchAudit() {
   }
 }
 
+async function fetchPolicies() {
+  loadingPolicies.value = true
+  try {
+    const res = await api.get('/breakglass/policies')
+    policies.value = res.data.policies || []
+  } catch {
+    policies.value = []
+  } finally {
+    loadingPolicies.value = false
+  }
+}
+
 async function refreshAll() {
-  await Promise.all([fetchAnalytics(), fetchSessions(), fetchNodes(), fetchAudit()])
+  await Promise.all([fetchAnalytics(), fetchSessions(), fetchNodes(), fetchAudit(), fetchPolicies()])
 }
 
 async function issueToken() {
@@ -438,6 +466,9 @@ onUnmounted(() => {
       <v-tab value="audit">
         <v-icon start size="small">mdi-file-search-outline</v-icon>Audit
       </v-tab>
+      <v-tab value="policies">
+        <v-icon start size="small">mdi-shield-account-outline</v-icon>Politici
+      </v-tab>
     </v-tabs>
 
     <v-window v-model="activeTab">
@@ -475,19 +506,22 @@ onUnmounted(() => {
               <v-card-title class="text-subtitle-1">Blocări per nod</v-card-title>
               <v-divider />
               <v-card-text v-if="!analytics?.audit.denied_per_node || Object.keys(analytics.audit.denied_per_node).length === 0">
-                <span class="text-caption text-secondary">Niciun acces refuzat înregistrat încă.</span>
+                <v-chip color="success" variant="tonal" label size="small">Nicio blocare detectată</v-chip>
               </v-card-text>
-              <v-list v-else density="compact">
-                <v-list-item
-                  v-for="(count, node) in analytics.audit.denied_per_node"
-                  :key="node"
-                >
-                  <v-list-item-title class="font-mono">{{ node }}</v-list-item-title>
-                  <template #append>
-                    <v-chip size="small" color="error" variant="tonal">{{ count }}</v-chip>
-                  </template>
-                </v-list-item>
-              </v-list>
+              <v-card-text v-else class="pt-4">
+                <div v-for="(count, node) in analytics.audit.denied_per_node" :key="node" class="mb-4">
+                  <div class="d-flex align-center justify-space-between mb-1">
+                    <span class="text-body-2 font-mono">{{ node }}</span>
+                    <span class="text-body-2 font-weight-medium text-error">{{ count }}</span>
+                  </div>
+                  <v-progress-linear
+                    :value="maxDeniedPerNode > 0 ? (count / maxDeniedPerNode) * 100 : 0"
+                    color="error"
+                    height="6"
+                    rounded
+                  />
+                </div>
+              </v-card-text>
             </v-card>
           </v-col>
         </v-row>
@@ -724,6 +758,59 @@ onUnmounted(() => {
             <template #item.comm="{ item }">
               <code class="text-caption">{{ item.comm || '—' }}</code>
               <span v-if="item.pcomm" class="text-caption text-secondary"> ← {{ item.pcomm }}</span>
+            </template>
+          </v-data-table>
+        </v-card>
+      </v-window-item>
+
+      <!-- Policies -->
+      <v-window-item value="policies">
+        <v-card flat class="gc-border pa-6">
+          <v-card-title class="px-0 text-subtitle-1">
+            <v-icon class="mr-2" color="info">mdi-shield-account-outline</v-icon>
+            NodeProtectionPolicy CRD Resources
+          </v-card-title>
+          <v-card-subtitle class="px-0 mb-4 text-caption text-secondary">
+            Politici de protecție a nodurilor Kubernetes (cluster-scoped). Definesc căile protejate și modul de operare.
+          </v-card-subtitle>
+
+          <v-data-table
+            :headers="policiesHeaders"
+            :items="policies"
+            :loading="loadingPolicies"
+            density="compact"
+            class="gc-border"
+            flat
+          >
+            <template #no-data>
+              <div class="text-center pa-4 text-caption text-secondary">
+                {{ loadingPolicies ? 'Se încarcă politici...' : 'Nicio politică NodeProtectionPolicy configurată.' }}
+              </div>
+            </template>
+            <template #item.name="{ item }">
+              <code class="text-caption">{{ item.metadata?.name || '—' }}</code>
+            </template>
+            <template #item.nodeSelector="{ item }">
+              <span class="text-caption">
+                {{ Object.keys(item.spec?.nodeSelector || {}).length > 0 ? Object.entries(item.spec.nodeSelector).map(([k, v]: [string, any]) => `${k}=${v}`).join(', ') : '(all nodes)' }}
+              </span>
+            </template>
+            <template #item.protectedPaths="{ item }">
+              <v-tooltip :text="(item.spec?.protectedPaths || []).join(', ')">
+                <template #activator="{ props }">
+                  <v-chip v-bind="props" size="small" variant="tonal">
+                    {{ (item.spec?.protectedPaths || []).length }} căi
+                  </v-chip>
+                </template>
+              </v-tooltip>
+            </template>
+            <template #item.mode="{ item }">
+              <v-chip :color="item.spec?.mode === 'deception' ? 'warning' : 'info'" size="small" variant="tonal" label>
+                {{ item.spec?.mode || 'deny' }}
+              </v-chip>
+            </template>
+            <template #item.maxTtl="{ item }">
+              <span class="text-caption font-mono">{{ item.spec?.breakGlass?.maxTTLSeconds || '—' }}s</span>
             </template>
           </v-data-table>
         </v-card>

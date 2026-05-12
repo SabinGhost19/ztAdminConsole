@@ -23,7 +23,11 @@ const isSubmitting = ref(false)
 const selectedApplication = ref('')
 const integrityDetails = ref<any | null>(null)
 const isRevalidating = ref(false)
+const isRetrying = ref(false)
 const integrityPoller = ref<number | null>(null)
+// Tracks when the current polling session started so we can ramp the
+// interval (2s → 4s → 8s) — fast feedback right after submit, then back off.
+const pollingStartedAt = ref<number>(0)
 
 const form = ref({
   name: '',
@@ -45,6 +49,10 @@ const applications = computed(() => dashboardStore.applications)
 const applicationOptions = computed(() => dashboardStore.applicationOptions)
 const isLoadingApplications = computed(() => dashboardStore.loadingApplications)
 const isLoadingIntegrity = computed(() => dashboardStore.loadingIntegrity)
+// SCA dropdown: replaces free-text input so the user cannot reference a
+// policy that does not exist in the cluster.
+const policyOptions = computed(() => dashboardStore.policyOptions)
+const isLoadingPolicies = computed(() => dashboardStore.loadingPolicies)
 
 function applicationSeverity(app: any) {
   const summary = app?.summary || {}
@@ -131,32 +139,80 @@ async function copyToClipboard(value: string) {
 
 let pollingInFlight = false
 
+// Adaptive polling cadence: the operator transitions through Validating →
+// Provisioning quickly at the start, then sits in a long Cosign/Trivy scan.
+// Polling fast at the beginning gives instant UI feedback, then backs off
+// to avoid hammering the backend during the long-running phases.
+function _nextPollDelayMs(): number {
+  const elapsed = Date.now() - pollingStartedAt.value
+  if (elapsed < 10_000) return 2000   // first 10s after submit: 2s cadence
+  if (elapsed < 40_000) return 4000   // next 30s: 4s cadence
+  return 8000                          // after 40s: relaxed 8s cadence
+}
+
+async function _pollOnce() {
+  if (pollingInFlight) {
+    _schedulePoll()
+    return
+  }
+  const currentApp = selectedApplication.value
+  if (!currentApp) return
+  const [namespace, name] = currentApp.split('/')
+  if (!namespace || !name) return
+  pollingInFlight = true
+  try {
+    const payload = await dashboardStore.fetchIntegrity(namespace, name, true)
+    if (selectedApplication.value !== currentApp) return
+    integrityDetails.value = payload
+    if (isIntegrityFlowStable(payload)) {
+      stopIntegrityPolling()
+      return
+    }
+  } finally {
+    pollingInFlight = false
+  }
+  _schedulePoll()
+}
+
+function _schedulePoll() {
+  integrityPoller.value = window.setTimeout(_pollOnce, _nextPollDelayMs())
+}
+
 function startIntegrityPolling() {
   stopIntegrityPolling()
   if (!selectedApplication.value) return
   pollingInFlight = false
-  integrityPoller.value = window.setInterval(async () => {
-    if (pollingInFlight) return
-    const currentApp = selectedApplication.value
-    if (!currentApp) return
-    const [namespace, name] = currentApp.split('/')
-    if (!namespace || !name) return
-    pollingInFlight = true
-    try {
-      const payload = await dashboardStore.fetchIntegrity(namespace, name, true)
-      if (selectedApplication.value !== currentApp) return
-      integrityDetails.value = payload
-      if (isIntegrityFlowStable(payload)) stopIntegrityPolling()
-    } finally {
-      pollingInFlight = false
-    }
-  }, 8000)
+  pollingStartedAt.value = Date.now()
+  _schedulePoll()
 }
 
 function stopIntegrityPolling() {
   if (integrityPoller.value !== null) {
-    window.clearInterval(integrityPoller.value)
+    window.clearTimeout(integrityPoller.value)
     integrityPoller.value = null
+  }
+}
+
+async function handleRetryReconcile() {
+  if (!selectedApplication.value || isRetrying.value) return
+  const [namespace, name] = selectedApplication.value.split('/')
+  if (!namespace || !name) return
+  isRetrying.value = true
+  try {
+    await dashboardStore.triggerZtaReconcile(namespace, name)
+    notifyStore.addAlert({
+      error_code: 'ZTA_RECONCILE_TRIGGERED',
+      message: `Re-evaluation pornită pentru ${name}. Operatorul reia analiza...`,
+      technical_details: 'Annotation zta.devsecops/reconciled-at patched on the CRD',
+      component: 'ZTA_OPERATOR',
+      trace_id: `RTR-${Math.random().toString(36).substring(2)}`,
+      action_required: 'Aşteptaţi câteva secunde pentru actualizarea stagiilor.',
+      type: 'warning',
+    })
+    // Restart polling aggressively so the user sees the new state quickly.
+    startIntegrityPolling()
+  } finally {
+    isRetrying.value = false
   }
 }
 
@@ -268,6 +324,8 @@ ${allowedPaths.map(path => `      - ${path}`).join('\n')}
 
 onMounted(() => {
   dashboardStore.fetchApplications(true).catch(() => undefined)
+  // Populate the SCA dropdown so the builder cannot reference a missing policy.
+  dashboardStore.fetchPolicies(true).catch(() => undefined)
 })
 
 onUnmounted(() => {
@@ -550,7 +608,17 @@ function submitDeclaration() {
                           <v-text-field v-model="form.namespace" label="Target Namespace" variant="outlined" density="compact"></v-text-field>
                         </v-col>
                         <v-col cols="12" md="6">
-                          <v-text-field v-model="form.securityPolicyName" label="Security Policy Name" variant="outlined" density="compact" hint="SupplyChainAttestation reference" persistent-hint></v-text-field>
+                          <v-select
+                            v-model="form.securityPolicyName"
+                            :items="policyOptions"
+                            label="Security Policy (SCA)"
+                            variant="outlined"
+                            density="compact"
+                            :loading="isLoadingPolicies"
+                            :no-data-text="'Nicio politică SCA în cluster — creează una întâi în tabul Supply Chain.'"
+                            hint="Doar politicile existente în cluster pot fi selectate"
+                            persistent-hint
+                          ></v-select>
                         </v-col>
                         <v-col cols="12">
                           <v-text-field
@@ -652,7 +720,11 @@ function submitDeclaration() {
 
     <section v-if="integrityDetails" class="integrity-dashboard mt-6">
       <div class="dashboard-panel span-12">
-        <ReconcileFlow :flow="integrityDetails.reconcileFlow" />
+        <ReconcileFlow
+          :flow="integrityDetails.reconcileFlow"
+          :retrying="isRetrying"
+          @retry="handleRetryReconcile"
+        />
       </div>
 
       <div class="dashboard-panel span-7-lg span-12-sm">

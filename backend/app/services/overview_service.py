@@ -128,13 +128,26 @@ def _build_recent_events(
 
 async def get_cluster_overview() -> dict[str, Any]:
     logger.info("Building cluster overview payload")
-    raw_ztas, raw_ztss, raw_scas, raw_jits, raw_pods = await asyncio.gather(
+    results = await asyncio.gather(
         scanner.list_custom_resources(plural=ZTA_PLURAL),
         scanner.list_custom_resources(plural=ZTS_PLURAL),
         scanner.list_custom_resources(plural=SCA_PLURAL, cluster_scoped=True),
         scanner.list_custom_resources(plural=JIT_PLURAL),
         scanner.list_pods(),
+        return_exceptions=True,
     )
+
+    def _safe(result: Any, label: str) -> list:
+        if isinstance(result, BaseException):
+            logger.warning("K8s fetch skipped for %s: %s", label, result)
+            return []
+        return result or []
+
+    raw_ztas = _safe(results[0], ZTA_PLURAL)
+    raw_ztss = _safe(results[1], ZTS_PLURAL)
+    raw_scas = _safe(results[2], SCA_PLURAL)
+    raw_jits = _safe(results[3], JIT_PLURAL)
+    raw_pods = _safe(results[4], "pods")
 
     ztas = [serialize_zta_resource(item) for item in raw_ztas]
     ztss = [serialize_zts_resource(item) for item in raw_ztss]

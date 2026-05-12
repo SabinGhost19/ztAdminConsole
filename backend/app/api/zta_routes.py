@@ -62,3 +62,20 @@ async def delete_zta_application(
 ):
     await zta_service.delete_zta_application(namespace, name)
     return {"status": "success", "message": f"{name} șters cu succes. ZTA Operator reconciliază rețeaua."}
+
+
+@router.post("/{namespace}/{name}/reconcile", response_model=Dict[str, Any])
+async def trigger_reconcile(
+    namespace: str,
+    name: str,
+    request: Request,
+    identity: Identity = Depends(require_permission(perm.P_APPS_WRITE)),
+):
+    """Wake the ZTA operator to re-evaluate this resource.
+
+    Used by the dashboard's "Re-Evaluate" button so users can recover from a
+    stale Failed_SupplyChain/Degraded state (e.g. after creating the missing
+    SCA) without having to delete and re-create the ZTA manually.
+    """
+    payload = await zta_service.trigger_zta_reconcile(namespace, name, identity.email)
+    return {"status": "success", "message": f"Reconcile trigger sent for {name}.", "resource": payload}

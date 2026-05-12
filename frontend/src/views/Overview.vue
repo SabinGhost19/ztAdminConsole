@@ -12,11 +12,15 @@ const trustScore = computed(() => dashboardStore.trustScore)
 const operatorHealth = computed(() => dashboardStore.operatorHealth)
 const recentEvents = computed(() => dashboardStore.recentEvents)
 const jitAnalytics = computed(() => dashboardStore.jitAnalytics || { activeSessions: 0, blockedUsers: [], deniedByType: {} })
+const breakglassAnalytics = computed(() => dashboardStore.breakglassAnalytics || { agents: { healthy: 0, total: 0 }, audit: { denied: 0, denied_per_node: {} } })
 
 onMounted(() => {
   dashboardStore.fetchOverview(true).catch(() => undefined)
   if (auth.can('jit:read')) {
     dashboardStore.fetchJitAnalytics()
+  }
+  if (auth.can('breakglass:read')) {
+    dashboardStore.fetchBreakglassAnalytics()
   }
 })
 </script>
@@ -76,6 +80,15 @@ onMounted(() => {
             <div class="text-caption text-secondary mb-2">Live JIT Sessions</div>
             <div class="text-h4 font-weight-bold">{{ jitAnalytics.activeSessions }}</div>
             <div class="text-body-2 mt-2">{{ (jitAnalytics.blockedUsers || []).length }} blocked identities</div>
+          </v-card-text>
+        </v-card>
+      </v-col>
+      <v-col v-if="auth.can('breakglass:read')" cols="12" md="3">
+        <v-card class="gc-border h-100" flat>
+          <v-card-text>
+            <div class="text-caption text-secondary mb-2">Node Protection (eBPF)</div>
+            <div class="text-h4 font-weight-bold">{{ breakglassAnalytics.agents.healthy }}<span class="text-body-2 ml-1">/ {{ breakglassAnalytics.agents.total }}</span></div>
+            <div class="text-body-2 mt-2">{{ breakglassAnalytics.audit.denied }} denied accesses</div>
           </v-card-text>
         </v-card>
       </v-col>

@@ -8,6 +8,7 @@ export const useDashboardStore = defineStore('dashboard', {
     overview: null as AnyRecord | null,
     loadingOverview: false,
     jitAnalytics: null as AnyRecord | null,
+    breakglassAnalytics: null as AnyRecord | null,
     applications: [] as AnyRecord[],
     loadingApplications: false,
     secrets: [] as AnyRecord[],
@@ -93,6 +94,15 @@ export const useDashboardStore = defineStore('dashboard', {
         this.jitAnalytics = null
       }
     },
+
+    async fetchBreakglassAnalytics() {
+      try {
+        const response = await api.get('/breakglass/analytics', { skipGlobalErrorAlert: true } as any)
+        this.breakglassAnalytics = response.data
+      } catch {
+        this.breakglassAnalytics = null
+      }
+    },
     async fetchApplications(force = false) {
       if (this.applications.length && !force) {
         return this.applications
@@ -166,6 +176,12 @@ export const useDashboardStore = defineStore('dashboard', {
     },
     setIntegrity(namespace: string, name: string, payload: AnyRecord) {
       this.integrityCache[`${namespace}/${name}`] = payload
+    },
+    async triggerZtaReconcile(namespace: string, name: string) {
+      // Wake the operator by patching a benign annotation on the ZTA.
+      // Used by the "Re-Evaluate" button on stale Failed_SupplyChain states.
+      const response = await api.post(`/zta/${namespace}/${name}/reconcile`)
+      return response.data
     },
   },
 })

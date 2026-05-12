@@ -78,6 +78,48 @@ async def create_zta_application(
             )
         raise e
 
+async def trigger_zta_reconcile(namespace: str, name: str, user_email: str) -> dict:
+    """Force the ZTA operator to re-evaluate a resource by patching a
+    benign annotation. Used by the dashboard's "Re-Evaluate" button so the
+    user can recover from a stale Failed_SupplyChain or Degraded state
+    without manually deleting and recreating the ZTA.
+
+    kopf watches the spec field but also picks up arbitrary metadata
+    changes — patching `zta.devsecops/reconciled-at` is enough to wake it.
+    """
+    from datetime import datetime, timezone
+
+    patch_body = {
+        "metadata": {
+            "annotations": {
+                "zta.devsecops/reconciled-at": datetime.now(timezone.utc).isoformat(),
+                "zta.devsecops/reconciled-by": user_email,
+            }
+        }
+    }
+    try:
+        logger.info("Triggering ZTA reconcile", extra={"details": {"namespace": namespace, "name": name, "user": user_email}})
+        from app.services.k8s_scanner import GROUP, VERSION
+        from app.core.k8s import get_custom_api
+        api = get_custom_api()
+        payload = await api.patch_namespaced_custom_object(
+            group=GROUP, version=VERSION, namespace=namespace,
+            plural=ZTA_PLURAL, name=name, body=patch_body,
+        )
+        logger.info("Triggered ZTA reconcile successfully", extra={"details": {"namespace": namespace, "name": name}})
+        return payload
+    except client.exceptions.ApiException as e:
+        if e.status == 404:
+            raise ZeroTrustException(
+                error_code="ZTA_NOT_FOUND",
+                message="ZTA-ul nu există — nu poate fi re-evaluat.",
+                technical_details=f"ZTA {name} în {namespace} nu există.",
+                component="ZTA_OPERATOR",
+                action_required="Reîncărcați lista de aplicații."
+            )
+        raise
+
+
 async def delete_zta_application(namespace: str, name: str):
     """
     Șterge declarația ZTA, trimițând un trigger către operatorul ZTA care 
