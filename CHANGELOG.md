@@ -1,3 +1,10 @@
+## [1.9.3](https://github.com/SabinGhost19/ztAdminConsole/compare/v1.9.2...v1.9.3) (2026-05-12)
+
+
+### Bug Fixes
+
+* **jit:** enforce 10-min token minimum, namespace dropdown, instant UI refresh ([32061fa](https://github.com/SabinGhost19/ztAdminConsole/commit/32061fa43ba7d68a4f93c304e719b8dd5bb9ed0c))
+
 ## [1.9.2](https://github.com/SabinGhost19/ztAdminConsole/compare/v1.9.1...v1.9.2) (2026-05-12)
 
 
