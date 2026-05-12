@@ -14,7 +14,6 @@ from app.services.breakglass_service import (
     MAX_TTL_SECONDS,
     get_service,
 )
-from app.core.k8s_client import get_k8s_client
 
 router = APIRouter()
 
@@ -200,8 +199,7 @@ async def list_policies(
     _identity: Identity = Depends(require_permission(perm.P_BREAKGLASS_READ)),
 ) -> Dict[str, Any]:
     try:
-        k8s_client = get_k8s_client()
-        policies = await get_service().list_policies(k8s_client)
+        policies = await get_service().list_policies()
         return {"status": "success", "policies": policies}
     except Exception as exc:
         return {"status": "error", "detail": str(exc), "policies": []}

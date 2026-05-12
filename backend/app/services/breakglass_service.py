@@ -311,19 +311,27 @@ class BreakGlassService:
         }
 
     # ---- policy management ----------------------------------------------
-    async def list_policies(self, k8s_client: Any) -> List[Dict[str, Any]]:
+    async def list_policies(self) -> List[Dict[str, Any]]:
         """List NodeProtectionPolicy CRD resources cluster-scoped.
+
         group: devsecops.licenta.ro, version: v1alpha1, plural: nodeprotectionpolicies
+
+        Uses the already-initialised async kubernetes_asyncio client from
+        app.core.k8s so we don't accidentally mix the sync `kubernetes`
+        package (which doesn't return coroutines) into the async stack.
         """
         try:
-            from kubernetes.client import CustomObjectsApi
-            crd_api = CustomObjectsApi(api_client=k8s_client)
+            # Imported lazily to avoid a hard dependency at module import
+            # time — keeps breakglass_service importable for unit tests
+            # that don't have the k8s client initialised.
+            from app.core.k8s import get_custom_api
+            crd_api = get_custom_api()
             result = await crd_api.list_cluster_custom_object(
                 group="devsecops.licenta.ro",
                 version="v1alpha1",
                 plural="nodeprotectionpolicies",
             )
-            return result.get("items", [])
+            return result.get("items", []) or []
         except Exception as e:
             logger.warning("Failed to list NodeProtectionPolicy CRDs: %s", e)
             return []
