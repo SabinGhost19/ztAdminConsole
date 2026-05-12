@@ -1,3 +1,10 @@
+# [1.9.0](https://github.com/SabinGhost19/ztAdminConsole/compare/v1.8.1...v1.9.0) (2026-05-12)
+
+
+### Features
+
+* **ui:** horizontal CI/CD pipeline + granular sub-task forensics ([d2da58f](https://github.com/SabinGhost19/ztAdminConsole/commit/d2da58fcd2e7e12f5a8c311b3acefdfa65b55cbc))
+
 ## [1.8.1](https://github.com/SabinGhost19/ztAdminConsole/compare/v1.8.0...v1.8.1) (2026-05-11)
 
 
