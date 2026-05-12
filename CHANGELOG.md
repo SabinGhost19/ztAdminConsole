@@ -1,3 +1,10 @@
+## [1.9.1](https://github.com/SabinGhost19/ztAdminConsole/compare/v1.9.0...v1.9.1) (2026-05-12)
+
+
+### Bug Fixes
+
+* **backend:** wire breakglass /policies to the async k8s client ([cbc9b50](https://github.com/SabinGhost19/ztAdminConsole/commit/cbc9b50a831649b33d61e7a2c12dc596147dd313))
+
 # [1.9.0](https://github.com/SabinGhost19/ztAdminConsole/compare/v1.8.1...v1.9.0) (2026-05-12)
 
 
