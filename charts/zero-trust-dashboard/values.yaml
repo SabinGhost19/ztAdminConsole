@@ -22,11 +22,11 @@ backend:
     tag: "32061fa"
   resources:
     limits:
-      cpu: 200m
-      memory: 256Mi
+      cpu: 1000m
+      memory: 1280Mi
     requests:
-      cpu: 100m
-      memory: 128Mi
+      cpu: 500m
+      memory: 640Mi
 
 ## Keycloak integration. Two distinct concerns share this top-level key:
 ##

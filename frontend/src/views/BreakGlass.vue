@@ -152,13 +152,37 @@ const maxDeniedPerNode = computed(() => {
   return values.length > 0 ? Math.max(...values) : 0
 })
 
+function reportFetchError(path: string, err: any) {
+  const status = err?.response?.status ?? 'NET'
+  const detail = err?.response?.data?.detail ?? err?.response?.data?.message ?? err?.message ?? 'unknown'
+  notifyStore.addAlert({
+    error_code: `BREAKGLASS_FETCH_FAILED_${status}`,
+    message: `Nu am putut citi ${path} (${status})`,
+    technical_details: typeof detail === 'string' ? detail : JSON.stringify(detail),
+    component: 'BREAKGLASS_UI',
+    trace_id: err?.response?.headers?.['x-request-id'] ?? 'CLIENT',
+    action_required:
+      status === 403
+        ? 'Cere unui platform-engineer/sre-oncall/security-auditor să-ți adauge grupul în Keycloak.'
+        : status === 401
+        ? 'Sesiunea a expirat — reautentifică-te.'
+        : 'Verifică logs backend zero-trust-dashboard-backend și conectivitatea agenți → /breakglass/heartbeat.',
+    request_method: 'GET',
+    request_path: path,
+    timestamp: new Date().toISOString(),
+    source: 'backend',
+    type: 'error',
+  })
+}
+
 async function fetchAnalytics() {
   loadingAnalytics.value = true
   try {
     const res = await api.get('/breakglass/analytics')
     analytics.value = res.data.analytics
-  } catch {
+  } catch (err) {
     analytics.value = null
+    reportFetchError('/breakglass/analytics', err)
   } finally {
     loadingAnalytics.value = false
   }
@@ -169,8 +193,9 @@ async function fetchSessions() {
   try {
     const res = await api.get('/breakglass/sessions')
     sessions.value = res.data.sessions || []
-  } catch {
+  } catch (err) {
     sessions.value = []
+    reportFetchError('/breakglass/sessions', err)
   } finally {
     loadingSessions.value = false
   }
@@ -181,8 +206,9 @@ async function fetchNodes() {
   try {
     const res = await api.get('/breakglass/nodes')
     nodes.value = res.data.nodes || []
-  } catch {
+  } catch (err) {
     nodes.value = []
+    reportFetchError('/breakglass/nodes', err)
   } finally {
     loadingNodes.value = false
   }
@@ -196,8 +222,9 @@ async function fetchAudit() {
     if (auditFilters.value.action) params.action = auditFilters.value.action
     const res = await api.get('/breakglass/audit', { params })
     auditEvents.value = res.data.events || []
-  } catch {
+  } catch (err) {
     auditEvents.value = []
+    reportFetchError('/breakglass/audit', err)
   } finally {
     loadingAudit.value = false
   }
@@ -208,8 +235,9 @@ async function fetchPolicies() {
   try {
     const res = await api.get('/breakglass/policies')
     policies.value = res.data.policies || []
-  } catch {
+  } catch (err) {
     policies.value = []
+    reportFetchError('/breakglass/policies', err)
   } finally {
     loadingPolicies.value = false
   }

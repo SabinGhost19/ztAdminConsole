@@ -12,12 +12,18 @@ metadata:
 rules:
   # Management of Zero Trust Custom Resources
   - apiGroups: ["devsecops.licenta.ro"]
-    resources: 
+    resources:
       - jitaccessrequests
       - zerotrustapplications
       - supplychainattestations
       - zerotrustsecrets
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  # Read-only access for Break-Glass / eBPF Honeypot policy listing
+  # (GET /api/v1/breakglass/policies in breakglass_service.list_policies).
+  - apiGroups: ["devsecops.licenta.ro"]
+    resources:
+      - nodeprotectionpolicies
+    verbs: ["get", "list", "watch"]
   # Required for Drift Detection and Dashboard Overview Insights
   - apiGroups: ["", "apps", "networking.k8s.io", "security.istio.io", "crds.external-secrets.io"]
     resources:
