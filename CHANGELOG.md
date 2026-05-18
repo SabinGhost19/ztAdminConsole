@@ -1,3 +1,10 @@
+## [1.9.4](https://github.com/SabinGhost19/ztAdminConsole/compare/v1.9.3...v1.9.4) (2026-05-18)
+
+
+### Bug Fixes
+
+* **breakglass:** requester fallback, RBAC NPP, visible errors ([138b24e](https://github.com/SabinGhost19/ztAdminConsole/commit/138b24edd6a47419f991c84208d61254b2c4792d))
+
 ## [1.9.3](https://github.com/SabinGhost19/ztAdminConsole/compare/v1.9.2...v1.9.3) (2026-05-12)
 
 
