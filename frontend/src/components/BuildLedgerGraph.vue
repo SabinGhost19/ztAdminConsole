@@ -19,11 +19,8 @@ function nodeStatus(node: Record<string, any>) {
 
 <template>
   <div class="ledger-shell">
-    <div class="d-flex align-center justify-space-between mb-3">
+    <div class="d-flex align-center mb-3">
       <div class="text-subtitle-2 font-weight-medium">Build Ledger</div>
-      <v-chip :color="status === 'verified' ? 'success' : (status === 'failed' ? 'error' : 'warning')" size="small" variant="tonal">
-        {{ status || 'pending' }}
-      </v-chip>
     </div>
     <div v-if="!props.nodes?.length" class="empty-state">No cryptographic chain exposed yet.</div>
     <div v-else class="ledger-tree">

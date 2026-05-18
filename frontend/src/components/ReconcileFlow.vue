@@ -210,7 +210,7 @@ function selectStage(stageId: string) {
   border: 1px solid rgba(var(--v-theme-on-surface), 0.12);
   border-radius: 16px;
   padding: 16px;
-  background: linear-gradient(145deg, rgba(var(--v-theme-warning), 0.05), rgba(var(--v-theme-surface), 1));
+  background: rgba(var(--v-theme-surface), 1);
 }
 
 /* --- Horizontal pipeline track ------------------------------------- */

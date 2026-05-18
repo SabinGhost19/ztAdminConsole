@@ -205,75 +205,104 @@ async function revokeZts(namespace: string, name: string) {
                   <tr v-if="expandedZtsUid === zts.metadata.uid" class="zts-describe-row">
                     <td colspan="4" class="pa-0">
                       <div class="zts-describe-panel">
-                        <div class="text-subtitle-2 font-weight-medium text-primary mb-3">
-                          <v-icon start color="primary" size="small">mdi-file-search-outline</v-icon>
-                          ZTS Describe: {{ zts.metadata.name }}
+
+                        <!-- Header -->
+                        <div class="describe-header">
+                          <v-icon size="16" color="secondary" class="mr-2">mdi-file-search-outline</v-icon>
+                          <span class="text-body-2 font-weight-medium">{{ zts.metadata.name }}</span>
+                          <span class="text-caption text-secondary ml-2">· ZeroTrustSecret</span>
                         </div>
-                        <v-row dense>
-                          <v-col cols="6" md="4">
-                            <div class="describe-label">Name</div>
-                            <div class="describe-value font-mono">{{ zts.metadata.name }}</div>
-                          </v-col>
-                          <v-col cols="6" md="4">
-                            <div class="describe-label">Namespace</div>
-                            <div class="describe-value font-mono">{{ zts.metadata.namespace }}</div>
-                          </v-col>
-                          <v-col cols="6" md="4">
-                            <div class="describe-label">UID</div>
-                            <div class="describe-value font-mono text-truncate">{{ zts.metadata.uid || 'n/a' }}</div>
-                          </v-col>
-                          <v-col cols="6" md="4">
-                            <div class="describe-label">Application Ref</div>
-                            <div class="describe-value font-mono">{{ zts.spec.applicationRef?.name || 'n/a' }}/{{ zts.spec.applicationRef?.namespace || 'n/a' }}</div>
-                          </v-col>
-                          <v-col cols="6" md="4">
-                            <div class="describe-label">Target Workload</div>
-                            <div class="describe-value font-mono">{{ zts.spec.targetWorkload?.kind || 'Deployment' }}/{{ zts.spec.targetWorkload?.name || 'n/a' }}</div>
-                          </v-col>
-                          <v-col cols="6" md="4">
-                            <div class="describe-label">Refresh Interval</div>
-                            <div class="describe-value font-mono">{{ zts.spec.lifecycle?.refreshInterval || 'n/a' }}</div>
-                          </v-col>
-                          <v-col cols="12" md="6">
-                            <div class="describe-label">HashiCorp Vault Path</div>
-                            <div class="describe-value font-mono">{{ zts.spec.secretData?.remotePath || 'n/a' }}</div>
-                          </v-col>
-                          <v-col cols="12" md="6">
-                            <div class="describe-label">Target Kubernetes Secret</div>
-                            <div class="describe-value font-mono">{{ zts.summary?.targetSecretName || 'n/a' }}</div>
-                          </v-col>
-                          <v-col cols="12" md="6">
-                            <div class="describe-label">Secret Store</div>
-                            <div class="describe-value font-mono">{{ zts.spec.secretStoreRef?.kind || 'ClusterSecretStore' }}/{{ zts.spec.secretStoreRef?.name || 'n/a' }}</div>
-                          </v-col>
-                          <v-col cols="12" md="6">
-                            <div class="describe-label">On Update Action</div>
-                            <div class="describe-value font-mono">{{ zts.spec.lifecycle?.onUpdateAction || 'n/a' }}</div>
-                          </v-col>
-                          <v-col v-if="zts.spec.secretData?.mapping?.length" cols="12">
-                            <div class="describe-label mb-1">Secret Mappings</div>
-                            <div v-for="(m, i) in zts.spec.secretData.mapping" :key="i" class="describe-mapping-row font-mono text-caption mb-1">
-                              <v-chip size="x-small" color="primary" variant="tonal" class="mr-2">{{ m.type }}</v-chip>
-                              <span class="text-warning">{{ m.remoteKey }}</span>
-                              <span class="text-secondary mx-1">→</span>
-                              <span class="text-success">{{ m.localKey }}</span>
-                              <span v-if="m.mountPath" class="text-secondary ml-1">@ {{ m.mountPath }}</span>
+
+                        <!-- Identity -->
+                        <div class="describe-section">
+                          <div class="describe-section-title">Identity</div>
+                          <div class="describe-fields-grid">
+                            <div class="describe-field">
+                              <span class="df-label">name</span>
+                              <span class="df-value">{{ zts.metadata.name }}</span>
                             </div>
-                          </v-col>
-                          <v-col v-if="zts.spec.zeroTrustConditions" cols="12">
-                            <div class="describe-label mb-2">Zero-Trust Conditions</div>
-                            <div class="d-flex flex-wrap ga-2">
-                              <v-chip size="small" :color="zts.spec.zeroTrustConditions.requireVerifiedStatus ? 'success' : 'warning'" variant="tonal">
-                                <v-icon start size="x-small">{{ zts.spec.zeroTrustConditions.requireVerifiedStatus ? 'mdi-check-circle' : 'mdi-alert-circle' }}</v-icon>
-                                Require Verified: {{ zts.spec.zeroTrustConditions.requireVerifiedStatus ? 'Yes' : 'No' }}
-                              </v-chip>
-                              <v-chip size="small" :color="zts.spec.zeroTrustConditions.timeBasedAccess?.enabled ? 'info' : 'secondary'" variant="tonal">
-                                <v-icon start size="x-small">{{ zts.spec.zeroTrustConditions.timeBasedAccess?.enabled ? 'mdi-clock-check' : 'mdi-clock-off' }}</v-icon>
-                                Time-Based Access: {{ zts.spec.zeroTrustConditions.timeBasedAccess?.enabled ? 'Enabled' : 'Disabled' }}
-                              </v-chip>
+                            <div class="describe-field">
+                              <span class="df-label">namespace</span>
+                              <span class="df-value">{{ zts.metadata.namespace }}</span>
                             </div>
-                          </v-col>
-                        </v-row>
+                            <div class="describe-field">
+                              <span class="df-label">uid</span>
+                              <span class="df-value text-secondary" style="font-size:0.72rem;">{{ zts.metadata.uid || '—' }}</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        <!-- References -->
+                        <div class="describe-section">
+                          <div class="describe-section-title">References</div>
+                          <div class="describe-fields-grid">
+                            <div class="describe-field">
+                              <span class="df-label">applicationRef</span>
+                              <span class="df-value">{{ zts.spec.applicationRef?.name || '—' }}<span class="text-secondary">/{{ zts.spec.applicationRef?.namespace || '—' }}</span></span>
+                            </div>
+                            <div class="describe-field">
+                              <span class="df-label">targetWorkload</span>
+                              <span class="df-value">{{ zts.spec.targetWorkload?.kind || 'Deployment' }}<span class="text-secondary">/{{ zts.spec.targetWorkload?.name || '—' }}</span></span>
+                            </div>
+                            <div class="describe-field">
+                              <span class="df-label">secretStore</span>
+                              <span class="df-value">{{ zts.spec.secretStoreRef?.kind || 'ClusterSecretStore' }}<span class="text-secondary">/{{ zts.spec.secretStoreRef?.name || '—' }}</span></span>
+                            </div>
+                          </div>
+                        </div>
+
+                        <!-- Secret Data -->
+                        <div class="describe-section">
+                          <div class="describe-section-title">Secret Data</div>
+                          <div class="describe-fields-grid">
+                            <div class="describe-field">
+                              <span class="df-label">remotePath</span>
+                              <span class="df-value">{{ zts.spec.secretData?.remotePath || '—' }}</span>
+                            </div>
+                            <div class="describe-field">
+                              <span class="df-label">targetSecret</span>
+                              <span class="df-value">{{ zts.summary?.targetSecretName || '—' }}</span>
+                            </div>
+                            <div class="describe-field">
+                              <span class="df-label">refreshInterval</span>
+                              <span class="df-value">{{ zts.spec.lifecycle?.refreshInterval || '—' }}</span>
+                            </div>
+                            <div class="describe-field">
+                              <span class="df-label">onUpdateAction</span>
+                              <span class="df-value">{{ zts.spec.lifecycle?.onUpdateAction || '—' }}</span>
+                            </div>
+                          </div>
+                          <div v-if="zts.spec.secretData?.mapping?.length" class="mt-2">
+                            <div class="df-label mb-1">mappings</div>
+                            <div v-for="(m, i) in zts.spec.secretData.mapping" :key="i" class="describe-mapping-row">
+                              <span class="dm-remote">{{ m.remoteKey }}</span>
+                              <v-icon size="12" class="mx-1 text-secondary">mdi-arrow-right</v-icon>
+                              <span class="dm-local">{{ m.localKey }}</span>
+                              <span class="dm-type">{{ m.type }}</span>
+                              <span v-if="m.mountPath" class="dm-mount text-secondary">{{ m.mountPath }}</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        <!-- Zero-Trust Conditions -->
+                        <div v-if="zts.spec.zeroTrustConditions" class="describe-section">
+                          <div class="describe-section-title">Zero-Trust Conditions</div>
+                          <div class="describe-fields-grid">
+                            <div class="describe-field">
+                              <span class="df-label">requireVerifiedStatus</span>
+                              <span :class="zts.spec.zeroTrustConditions.requireVerifiedStatus ? 'df-value-ok' : 'df-value-warn'">
+                                {{ zts.spec.zeroTrustConditions.requireVerifiedStatus ? 'true' : 'false' }}
+                              </span>
+                            </div>
+                            <div class="describe-field">
+                              <span class="df-label">timeBasedAccess</span>
+                              <span :class="zts.spec.zeroTrustConditions.timeBasedAccess?.enabled ? 'df-value-ok' : 'df-value-secondary'">
+                                {{ zts.spec.zeroTrustConditions.timeBasedAccess?.enabled ? 'enabled' : 'disabled' }}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+
                       </div>
                     </td>
                   </tr>
@@ -306,32 +335,103 @@ async function revokeZts(namespace: string, name: string) {
 }
 
 .zts-describe-panel {
-  padding: 16px 20px;
+  padding: 16px 20px 20px;
   background: rgba(var(--v-theme-surface), 1);
-  border-top: 1px solid rgba(var(--v-theme-on-surface), 0.08);
-  border-bottom: 2px solid rgba(var(--v-theme-primary), 0.25);
+  border-top: 1px solid rgba(var(--v-theme-on-surface), 0.07);
 }
 
-.describe-label {
-  font-size: 0.7rem;
+.describe-header {
+  display: flex;
+  align-items: center;
+  padding: 0 0 12px 0;
+  border-bottom: 1px solid rgba(var(--v-theme-on-surface), 0.08);
+  margin-bottom: 0;
+}
+
+.describe-section {
+  padding: 12px 0;
+  border-bottom: 1px solid rgba(var(--v-theme-on-surface), 0.06);
+}
+
+.describe-section:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.describe-section-title {
+  font-size: 0.65rem;
+  font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: rgba(var(--v-theme-on-surface), 0.5);
-  margin-bottom: 2px;
+  letter-spacing: 0.1em;
+  color: rgba(var(--v-theme-on-surface), 0.38);
+  margin-bottom: 8px;
 }
 
-.describe-value {
+.describe-fields-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 8px;
+}
+
+.describe-field {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.df-label {
+  font-family: 'Roboto Mono', monospace;
+  font-size: 0.7rem;
+  color: rgba(var(--v-theme-on-surface), 0.45);
+}
+
+.df-value {
+  font-family: 'Roboto Mono', monospace;
   font-size: 0.8rem;
-  color: rgba(var(--v-theme-on-surface), 0.9);
+  color: rgba(var(--v-theme-on-surface), 0.88);
   word-break: break-all;
+}
+
+.df-value-ok {
+  font-family: 'Roboto Mono', monospace;
+  font-size: 0.8rem;
+  color: rgb(var(--v-theme-success));
+}
+
+.df-value-warn {
+  font-family: 'Roboto Mono', monospace;
+  font-size: 0.8rem;
+  color: rgb(var(--v-theme-warning));
+}
+
+.df-value-secondary {
+  font-family: 'Roboto Mono', monospace;
+  font-size: 0.8rem;
+  color: rgba(var(--v-theme-on-surface), 0.45);
 }
 
 .describe-mapping-row {
   display: flex;
   align-items: center;
-  padding: 4px 8px;
+  gap: 6px;
+  padding: 5px 10px;
   border: 1px solid rgba(var(--v-theme-on-surface), 0.08);
   border-radius: 6px;
-  background: rgba(var(--v-theme-on-surface), 0.03);
+  background: rgba(var(--v-theme-on-surface), 0.02);
+  font-family: 'Roboto Mono', monospace;
+  font-size: 0.78rem;
+  margin-bottom: 4px;
 }
+
+.dm-remote { color: rgba(var(--v-theme-on-surface), 0.75); }
+.dm-local  { color: rgba(var(--v-theme-on-surface), 0.88); font-weight: 500; }
+.dm-type   {
+  font-size: 0.68rem;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: rgba(var(--v-theme-on-surface), 0.07);
+  color: rgba(var(--v-theme-on-surface), 0.55);
+  margin-left: 4px;
+}
+.dm-mount  { font-size: 0.72rem; margin-left: 4px; }
 </style>

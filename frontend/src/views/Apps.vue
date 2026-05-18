@@ -5,7 +5,6 @@ import { useTheme } from 'vuetify'
 import { VueMonacoEditor } from '@guolao/vue-monaco-editor'
 import { api } from '../api/axios'
 import BuildLedgerGraph from '../components/BuildLedgerGraph.vue'
-import MerkleTreeExplorer from '../components/MerkleTreeExplorer.vue'
 import ProvisioningPlan from '../components/ProvisioningPlan.vue'
 import ReconcileFlow from '../components/ReconcileFlow.vue'
 import SbomTree from '../components/SbomTree.vue'
@@ -306,6 +305,27 @@ const imageError = computed(() => {
 const isStep1Valid = computed(() => {
   return form.value.name.length > 2 && form.value.image.length > 5 && !imageError.value && form.value.securityPolicyName.length > 1
 })
+
+const step1ValidationMessages = computed(() => {
+  const msgs: string[] = []
+  if (!form.value.name || form.value.name.length <= 2) msgs.push('App name must be at least 3 characters')
+  if (!form.value.securityPolicyName) msgs.push('Security policy (SCA) must be selected')
+  if (!form.value.image) msgs.push('Container image is required')
+  else if (imageError.value) msgs.push(imageError.value)
+  return msgs
+})
+
+function formatSanctionTimestamp(ts?: string): string {
+  if (!ts) return 'timestamp unavailable'
+  try {
+    return new Date(ts).toLocaleString('en-GB', {
+      year: 'numeric', month: 'short', day: 'numeric',
+      hour: '2-digit', minute: '2-digit'
+    })
+  } catch {
+    return ts
+  }
+}
 
 const yamlPreview = computed(() => {
   const egressPorts = form.value.egressPorts
@@ -629,7 +649,16 @@ function submitDeclaration() {
                       <h3 class="text-subtitle-1 font-weight-medium mb-4">Application Fundamentals</h3>
                       <v-row>
                         <v-col cols="12" md="6">
-                          <v-text-field v-model="form.name" label="App Name" variant="outlined" density="compact"></v-text-field>
+                          <v-text-field v-model="form.name" label="App Name" variant="outlined" density="compact">
+                            <template v-slot:append-inner>
+                              <v-tooltip location="top" max-width="280">
+                                <template v-slot:activator="{ props }">
+                                  <v-icon v-bind="props" size="small" color="secondary" style="cursor:help;">mdi-help-circle-outline</v-icon>
+                                </template>
+                                <span>The Kubernetes resource name for this ZeroTrustApplication. Must be lowercase alphanumeric with hyphens only (e.g. my-app). This becomes the CRD name in your cluster.</span>
+                              </v-tooltip>
+                            </template>
+                          </v-text-field>
                         </v-col>
                         <v-col cols="12" md="6">
                           <v-select
@@ -640,7 +669,16 @@ function submitDeclaration() {
                             density="compact"
                             :loading="isLoadingNamespaces"
                             no-data-text="No namespaces found in cluster"
-                          ></v-select>
+                          >
+                            <template v-slot:append-inner>
+                              <v-tooltip location="top" max-width="280">
+                                <template v-slot:activator="{ props }">
+                                  <v-icon v-bind="props" size="small" color="secondary" style="cursor:help;">mdi-help-circle-outline</v-icon>
+                                </template>
+                                <span>The Kubernetes namespace where this application will be deployed. Must already exist in the cluster. Defines policy scope and network segmentation boundary.</span>
+                              </v-tooltip>
+                            </template>
+                          </v-select>
                         </v-col>
                         <v-col cols="12" md="6">
                           <v-select
@@ -653,7 +691,16 @@ function submitDeclaration() {
                             :no-data-text="'Nicio politică SCA în cluster — creează una întâi în tabul Supply Chain.'"
                             hint="Doar politicile existente în cluster pot fi selectate"
                             persistent-hint
-                          ></v-select>
+                          >
+                            <template v-slot:append-inner>
+                              <v-tooltip location="top" max-width="300">
+                                <template v-slot:activator="{ props }">
+                                  <v-icon v-bind="props" size="small" color="secondary" style="cursor:help;">mdi-help-circle-outline</v-icon>
+                                </template>
+                                <span>Reference to a SupplyChainAdmission policy this app must satisfy before deployment. The operator validates image provenance, Cosign signatures, and Trivy scan results against this policy.</span>
+                              </v-tooltip>
+                            </template>
+                          </v-select>
                         </v-col>
                         <v-col cols="12">
                           <v-text-field
@@ -668,15 +715,30 @@ function submitDeclaration() {
                             <template v-slot:prepend-inner>
                               <v-icon :color="imageError ? 'error' : 'default'">mdi-docker</v-icon>
                             </template>
+                            <template v-slot:append-inner>
+                              <v-tooltip location="top" max-width="300">
+                                <template v-slot:activator="{ props }">
+                                  <v-icon v-bind="props" size="small" color="secondary" style="cursor:help;">mdi-help-circle-outline</v-icon>
+                                </template>
+                                <span>The OCI container image to deploy. Must be hosted on GHCR (ghcr.io) and signed with Cosign. Tag 'latest' is blocked by Kyverno. Always use a pinned semver tag — e.g., ghcr.io/org/app:v1.2.3.</span>
+                              </v-tooltip>
+                            </template>
                           </v-text-field>
                           <v-alert v-if="imageError" type="error" variant="tonal" density="compact" class="mt-2 text-caption">
                             Politica Zero-Trust (Kyverno) va bloca acest deployment! Asigurați-vă că respectați regulile lanțului de aprovizionare.
                           </v-alert>
                         </v-col>
                       </v-row>
-                      <div class="d-flex mt-6">
-                        <v-spacer></v-spacer>
-                        <v-btn color="primary" @click="step = 2" :disabled="!isStep1Valid" variant="flat">Continue to Network</v-btn>
+                      <div class="d-flex flex-column align-end mt-6">
+                        <div v-if="step1ValidationMessages.length" class="text-right mb-2">
+                          <div v-for="msg in step1ValidationMessages" :key="msg" class="text-caption text-error mb-1">
+                            <v-icon size="x-small" class="mr-1">mdi-alert-circle-outline</v-icon>{{ msg }}
+                          </div>
+                        </div>
+                        <div class="d-flex w-100">
+                          <v-spacer></v-spacer>
+                          <v-btn color="primary" @click="step = 2" :disabled="!isStep1Valid" variant="flat">Continue to Network</v-btn>
+                        </div>
                       </div>
                     </div>
                   </v-stepper-window-item>
@@ -696,7 +758,16 @@ function submitDeclaration() {
                             no-data-text="No namespaces found"
                             hint="Select a cluster namespace or type a custom one"
                             persistent-hint
-                          ></v-combobox>
+                          >
+                            <template v-slot:append-inner>
+                              <v-tooltip location="top" max-width="300">
+                                <template v-slot:activator="{ props }">
+                                  <v-icon v-bind="props" size="small" color="secondary" style="cursor:help;">mdi-help-circle-outline</v-icon>
+                                </template>
+                                <span>The Kubernetes namespace from which ingress traffic is allowed. Maps to a Cilium NetworkPolicy ingressAllowedFrom rule. Only pods in this namespace can reach your application.</span>
+                              </v-tooltip>
+                            </template>
+                          </v-combobox>
                         </v-col>
                         <v-col cols="12" md="6">
                           <v-combobox
@@ -709,18 +780,54 @@ function submitDeclaration() {
                             no-data-text="No namespaces found"
                             hint="Select a cluster namespace or type a custom one"
                             persistent-hint
-                          ></v-combobox>
+                          >
+                            <template v-slot:append-inner>
+                              <v-tooltip location="top" max-width="300">
+                                <template v-slot:activator="{ props }">
+                                  <v-icon v-bind="props" size="small" color="secondary" style="cursor:help;">mdi-help-circle-outline</v-icon>
+                                </template>
+                                <span>The namespace your app is allowed to send traffic to. Maps to egressAllowedTo in CiliumNetworkPolicy. Restricts all outbound connections to the specified namespace only.</span>
+                              </v-tooltip>
+                            </template>
+                          </v-combobox>
                         </v-col>
                         <v-col cols="12" md="6">
-                          <v-text-field v-model="form.egressPorts" label="Allowed Egress Ports" variant="outlined" density="compact"></v-text-field>
+                          <v-text-field v-model="form.egressPorts" label="Allowed Egress Ports" variant="outlined" density="compact">
+                            <template v-slot:append-inner>
+                              <v-tooltip location="top" max-width="280">
+                                <template v-slot:activator="{ props }">
+                                  <v-icon v-bind="props" size="small" color="secondary" style="cursor:help;">mdi-help-circle-outline</v-icon>
+                                </template>
+                                <span>Comma-separated TCP port numbers allowed for egress. E.g., "5432" for PostgreSQL, "6379" for Redis. Leave empty to block all egress except explicit rules.</span>
+                              </v-tooltip>
+                            </template>
+                          </v-text-field>
                         </v-col>
                         <v-col cols="12">
                           <v-row>
                             <v-col cols="12" md="6">
-                              <v-select v-model="form.wafMode" :items="['Monitor', 'Block']" label="WAF Mode" variant="outlined" density="compact"></v-select>
+                              <v-select v-model="form.wafMode" :items="['Monitor', 'Block']" label="WAF Mode" variant="outlined" density="compact">
+                                <template v-slot:append-inner>
+                                  <v-tooltip location="top" max-width="300">
+                                    <template v-slot:activator="{ props }">
+                                      <v-icon v-bind="props" size="small" color="secondary" style="cursor:help;">mdi-help-circle-outline</v-icon>
+                                    </template>
+                                    <span>Monitor: log requests but allow them through. Block: actively reject requests matching WAF rules. Start with Monitor to assess false-positives, then switch to Block.</span>
+                                  </v-tooltip>
+                                </template>
+                              </v-select>
                             </v-col>
                             <v-col cols="12" md="6">
-                              <v-select v-model="form.wafProfile" :items="wafProfiles" label="Coraza WAF Profile" variant="outlined" density="compact"></v-select>
+                              <v-select v-model="form.wafProfile" :items="wafProfiles" label="Coraza WAF Profile" variant="outlined" density="compact">
+                                <template v-slot:append-inner>
+                                  <v-tooltip location="top" max-width="300">
+                                    <template v-slot:activator="{ props }">
+                                      <v-icon v-bind="props" size="small" color="secondary" style="cursor:help;">mdi-help-circle-outline</v-icon>
+                                    </template>
+                                    <span>Choose the Coraza OWASP WAF ruleset tuned for your app type. REST-API: JSON/REST. SPA: single-page apps. GRPC: gRPC microservices. Strict-Baseline: generic strict mode.</span>
+                                  </v-tooltip>
+                                </template>
+                              </v-select>
                             </v-col>
                           </v-row>
                         </v-col>
@@ -737,8 +844,26 @@ function submitDeclaration() {
                     <div class="pa-4">
                       <h3 class="text-subtitle-1 font-weight-medium mb-4">Runtime Guardrails</h3>
                       <p class="text-body-2 text-secondary mb-4">Definește căile permise și acțiunea operatorului când runtime-ul este compromis.</p>
-                      <v-text-field v-model="form.allowedPaths" label="Allowed Paths" variant="outlined" density="compact" placeholder="/tmp/app-data,/var/cache/app"></v-text-field>
-                      <v-select v-model="form.onCompromise" :items="['Isolate', 'Kill']" label="On Compromise Action" variant="outlined" density="compact" class="mt-4"></v-select>
+                      <v-text-field v-model="form.allowedPaths" label="Allowed Paths" variant="outlined" density="compact" placeholder="/tmp/app-data,/var/cache/app">
+                        <template v-slot:append-inner>
+                          <v-tooltip location="top" max-width="300">
+                            <template v-slot:activator="{ props }">
+                              <v-icon v-bind="props" size="small" color="secondary" style="cursor:help;">mdi-help-circle-outline</v-icon>
+                            </template>
+                            <span>Comma-separated filesystem paths the container is permitted to write to. Falco and the runtime agent enforce this via eBPF. Any write outside these paths triggers the On Compromise action.</span>
+                          </v-tooltip>
+                        </template>
+                      </v-text-field>
+                      <v-select v-model="form.onCompromise" :items="['Isolate', 'Kill']" label="On Compromise Action" variant="outlined" density="compact" class="mt-4">
+                        <template v-slot:append-inner>
+                          <v-tooltip location="top" max-width="320">
+                            <template v-slot:activator="{ props }">
+                              <v-icon v-bind="props" size="small" color="secondary" style="cursor:help;">mdi-help-circle-outline</v-icon>
+                            </template>
+                            <span>Isolate: removes all network policies, cutting the pod off from the mesh — least disruptive. Kill: terminates the pod immediately. Use Kill only for high-risk workloads where containment matters more than availability.</span>
+                          </v-tooltip>
+                        </template>
+                      </v-select>
 
                       <div class="d-flex mt-6">
                         <v-btn variant="text" @click="step = 2">Back</v-btn>
@@ -795,44 +920,98 @@ function submitDeclaration() {
         <ProvisioningPlan :plan="integrityDetails.provisioningPlan || []" />
       </div>
 
-      <div class="dashboard-panel span-7-lg span-12-sm">
-        <MerkleTreeExplorer :levels="integrityDetails.revalidation?.merkleLevels || []" :summary="integrityDetails.revalidation?.merkle || {}" />
-      </div>
-      <div class="dashboard-panel span-5-lg span-12-sm">
+      <div class="dashboard-panel span-12">
         <SbomTree :groups="integrityDetails.sbomTree || []" />
       </div>
 
-      <div class="dashboard-panel span-6-lg span-12-sm">
+      <div class="dashboard-panel span-5-lg span-12-sm">
         <v-card class="gc-border panel-card" flat>
-          <v-card-title class="text-primary panel-title">Runtime Forensics</v-card-title>
-          <v-card-text class="panel-content stack-16">
-            <div class="text-body-2">Falco CM {{ integrityDetails.runtimeForensics?.localFalcoRuleConfigMap || 'n/a' }} • Talon rule {{ integrityDetails.runtimeForensics?.talonRuleReference || 'n/a' }}</div>
-            <div class="d-flex flex-wrap align-center ga-2">
-              <v-chip :color="integrityDetails.runtimeForensics?.localRulePresent ? 'success' : 'error'" variant="tonal">Local rule {{ integrityDetails.runtimeForensics?.localRulePresent ? 'present' : 'missing' }}</v-chip>
-              <v-chip :color="integrityDetails.runtimeForensics?.talonRulePresent ? 'success' : 'error'" variant="tonal">Talon {{ integrityDetails.runtimeForensics?.talonRulePresent ? 'patched' : 'not patched' }}</v-chip>
-            </div>
-            <div>
-              <div class="text-caption text-secondary mb-2">Allowed paths</div>
-              <div class="d-flex flex-wrap align-center ga-2">
-                <v-chip v-for="path in (integrityDetails.runtimeForensics?.allowedPaths || [])" :key="path" size="small" variant="outlined">{{ path }}</v-chip>
+          <v-card-title class="text-primary panel-title">
+            <v-icon start size="small" color="primary">mdi-radar</v-icon>
+            Runtime Forensics
+          </v-card-title>
+          <v-card-text class="panel-content">
+            <div class="forensics-grid">
+              <div class="forensic-item">
+                <div class="forensic-label">Falco ConfigMap</div>
+                <div class="forensic-value font-mono">{{ integrityDetails.runtimeForensics?.localFalcoRuleConfigMap || 'n/a' }}</div>
               </div>
+              <div class="forensic-item">
+                <div class="forensic-label">Talon Rule Reference</div>
+                <div class="forensic-value font-mono">{{ integrityDetails.runtimeForensics?.talonRuleReference || 'n/a' }}</div>
+              </div>
+            </div>
+            <div class="d-flex flex-wrap ga-2 mt-3">
+              <v-chip
+                :color="integrityDetails.runtimeForensics?.localRulePresent ? 'success' : 'error'"
+                variant="tonal"
+                size="small"
+                :prepend-icon="integrityDetails.runtimeForensics?.localRulePresent ? 'mdi-check-circle' : 'mdi-close-circle'"
+              >
+                Local rule {{ integrityDetails.runtimeForensics?.localRulePresent ? 'present' : 'missing' }}
+              </v-chip>
+              <v-chip
+                :color="integrityDetails.runtimeForensics?.talonRulePresent ? 'success' : 'error'"
+                variant="tonal"
+                size="small"
+                :prepend-icon="integrityDetails.runtimeForensics?.talonRulePresent ? 'mdi-check-circle' : 'mdi-close-circle'"
+              >
+                Talon {{ integrityDetails.runtimeForensics?.talonRulePresent ? 'patched' : 'not patched' }}
+              </v-chip>
+            </div>
+            <div class="mt-3">
+              <div class="forensic-label mb-2">Allowed write paths</div>
+              <div v-if="(integrityDetails.runtimeForensics?.allowedPaths || []).length" class="d-flex flex-wrap ga-1">
+                <v-chip
+                  v-for="path in integrityDetails.runtimeForensics.allowedPaths"
+                  :key="path"
+                  size="small"
+                  variant="outlined"
+                  color="secondary"
+                  prepend-icon="mdi-folder-outline"
+                >{{ path }}</v-chip>
+              </div>
+              <div v-else class="text-caption text-secondary font-italic">No allowed paths defined.</div>
             </div>
           </v-card-text>
         </v-card>
       </div>
 
-      <div class="dashboard-panel span-6-lg span-12-sm">
+      <div class="dashboard-panel span-7-lg span-12-sm">
         <v-card class="gc-border panel-card" flat>
-          <v-card-title class="text-primary panel-title">Sanction History</v-card-title>
+          <v-card-title class="text-primary panel-title">
+            <v-icon start size="small" color="primary">mdi-history</v-icon>
+            Sanction History
+          </v-card-title>
           <v-card-text class="panel-content">
-            <v-timeline density="compact" align="start" side="end">
-              <v-timeline-item v-for="(event, index) in (integrityDetails.sanctionHistory || [])" :key="`${event.kind}-${index}`" size="small" :dot-color="sanctionDotColor(event)">
-                <div class="text-body-2 font-weight-medium">{{ event.action }}</div>
-                <div class="text-caption text-secondary">{{ event.message }}</div>
-                <div class="text-caption mt-1">{{ event.timestamp || 'timestamp unavailable' }}</div>
-              </v-timeline-item>
-            </v-timeline>
-            <div v-if="!(integrityDetails.sanctionHistory || []).length" class="text-caption text-secondary">No enforcement history recorded yet.</div>
+            <div v-if="!(integrityDetails.sanctionHistory || []).length" class="text-caption text-secondary font-italic">
+              No enforcement history recorded yet.
+            </div>
+            <div v-else class="sanction-list">
+              <div
+                v-for="(event, index) in integrityDetails.sanctionHistory"
+                :key="`${event.kind}-${index}`"
+                class="sanction-item"
+                :class="`sanction-${sanctionDotColor(event)}`"
+              >
+                <div class="sanction-dot">
+                  <v-icon size="14" :color="sanctionDotColor(event)">
+                    {{ sanctionDotColor(event) === 'success' ? 'mdi-check-circle' : (sanctionDotColor(event) === 'error' ? 'mdi-alert-circle' : 'mdi-alert') }}
+                  </v-icon>
+                </div>
+                <div class="sanction-body">
+                  <div class="d-flex align-center ga-2 flex-wrap mb-1">
+                    <span class="text-body-2 font-weight-medium">{{ event.action }}</span>
+                    <v-chip size="x-small" :color="sanctionDotColor(event)" variant="tonal">{{ event.kind || 'event' }}</v-chip>
+                  </div>
+                  <div class="text-caption text-secondary">{{ event.message }}</div>
+                  <div class="text-caption text-medium-emphasis mt-1">
+                    <v-icon size="x-small" class="mr-1">mdi-clock-outline</v-icon>
+                    {{ formatSanctionTimestamp(event.timestamp) }}
+                  </div>
+                </div>
+              </div>
+            </div>
           </v-card-text>
         </v-card>
       </div>
@@ -882,6 +1061,68 @@ function submitDeclaration() {
 
 .stack-16 > * + * {
   margin-top: var(--space-16);
+}
+
+/* --- Runtime Forensics -------------------------------------------- */
+.forensics-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.forensic-item {
+  border: 1px solid rgba(var(--v-theme-on-surface), 0.08);
+  border-radius: 8px;
+  padding: 8px 12px;
+  background: rgba(var(--v-theme-on-surface), 0.02);
+}
+
+.forensic-label {
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: rgba(var(--v-theme-on-surface), 0.45);
+  margin-bottom: 3px;
+}
+
+.forensic-value {
+  font-size: 0.8rem;
+  color: rgba(var(--v-theme-on-surface), 0.88);
+  word-break: break-all;
+}
+
+/* --- Sanction History -------------------------------------------- */
+.sanction-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.sanction-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(var(--v-theme-on-surface), 0.08);
+  background: rgba(var(--v-theme-on-surface), 0.02);
+}
+
+.sanction-dot {
+  width: 26px;
+  height: 26px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(var(--v-theme-on-surface), 0.06);
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.sanction-body {
+  flex: 1;
+  min-width: 0;
 }
 
 @media (min-width: 1280px) {

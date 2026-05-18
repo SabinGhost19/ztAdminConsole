@@ -169,11 +169,6 @@ function formatTimestamp(value?: string) {
         </v-tooltip>
       </div>
 
-      <v-chip class="mr-4 font-weight-medium" size="small" variant="tonal" color="green-darken-1">
-        <v-icon start size="small">mdi-server-network</v-icon>
-        europe-west3-a
-      </v-chip>
-
       <v-btn icon @click="toggleTheme" color="secondary">
         <v-icon>{{ theme.global.current.value.dark ? 'mdi-weather-sunny' : 'mdi-weather-night' }}</v-icon>
       </v-btn>
@@ -255,8 +250,8 @@ function formatTimestamp(value?: string) {
           <v-list-item-title class="text-caption text-medium-emphasis">
             Logged in as
           </v-list-item-title>
-          <v-list-item-subtitle class="text-caption">
-            {{ auth.identity.email }}
+          <v-list-item-subtitle class="text-caption font-weight-medium">
+            {{ auth.identity.name || auth.identity.preferred_username || auth.identity.email }}
           </v-list-item-subtitle>
         </v-list-item>
       </v-list>
