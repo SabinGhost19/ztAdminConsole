@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -14,6 +15,8 @@ from app.services.breakglass_service import (
     MAX_TTL_SECONDS,
     get_service,
 )
+
+logger = logging.getLogger("zero_trust_backend.breakglass")
 
 router = APIRouter()
 
@@ -90,7 +93,16 @@ async def issue_token(
     request: Request,
     identity: Identity = Depends(require_permission(perm.P_BREAKGLASS_ISSUE)),
 ) -> IssueTokenOut:
-    requester = identity.email
+    # email claim may be absent when Keycloak token scope is "openid groups"
+    # (missing "email" scope or mapper not configured); fall back to
+    # preferred_username then sub so the endpoint never returns 400 for a
+    # successfully-authenticated user.
+    requester = identity.email or identity.preferred_username or identity.subject
+    import logging as _log
+    _log.getLogger("zero_trust_backend.breakglass").info(
+        "issue_token: requester=%r node=%r ttl=%s",
+        requester, payload.node, payload.ttl_seconds,
+    )
     svc = get_service()
     try:
         sess = svc.issue_token(
@@ -142,15 +154,39 @@ async def revoke_session(
 # Agent ingress (DaemonSet pushes here)
 # ---------------------------------------------------------------------------
 @router.post("/audit", summary="Ingest audit event from agent")
-async def ingest_audit(payload: AuditEventIn) -> Dict[str, Any]:
-    get_service().ingest_audit(payload.dict(exclude_none=False))
+async def ingest_audit(payload: AuditEventIn, request: Request) -> Dict[str, Any]:
+    ev = payload.dict(exclude_none=False)
+    node = ev.get("node") or request.headers.get("X-Forwarded-Node", "unknown")
+    action = ev.get("action", "?")
+    path = ev.get("path", "?")
+    comm = ev.get("comm", "?")
+    pid = ev.get("pid", "?")
+    logger.info(
+        "audit ingest: node=%s action=%s path=%s comm=%s pid=%s",
+        node, action, path, comm, pid,
+    )
+    get_service().ingest_audit(ev)
     return {"status": "ok"}
 
 
 @router.post("/heartbeat", summary="Ingest heartbeat from agent")
-async def ingest_heartbeat(payload: Dict[str, Any]) -> Dict[str, Any]:
+async def ingest_heartbeat(payload: Dict[str, Any], request: Request) -> Dict[str, Any]:
     if not isinstance(payload, dict):
         raise HTTPException(status_code=400, detail="payload must be an object")
+    node = payload.get("node") or request.headers.get("X-Forwarded-Node", "unknown")
+    policies = payload.get("policies_loaded", "?")
+    mode = payload.get("mode", "?")
+    version = payload.get("version", "?")
+    fwd = (payload.get("audit_forwarder") or {})
+    fwd_url = fwd.get("url", "disabled")
+    fwd_dropped = fwd.get("dropped", 0)
+    fwd_err = fwd.get("last_err", "")
+    logger.info(
+        "heartbeat: node=%s mode=%s policies=%s version=%s forwarder_url=%s dropped=%s last_err=%r",
+        node, mode, policies, version, fwd_url, fwd_dropped, fwd_err,
+    )
+    if fwd_dropped and int(fwd_dropped) > 0:
+        logger.warning("heartbeat: node=%s has %s dropped audit events", node, fwd_dropped)
     get_service().ingest_heartbeat(payload)
     return {"status": "ok"}
 
