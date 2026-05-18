@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import type { AxiosError, AxiosResponse } from 'axios'
+import { useTheme } from 'vuetify'
+import { VueMonacoEditor } from '@guolao/vue-monaco-editor'
 import { api } from '../api/axios'
 import BuildLedgerGraph from '../components/BuildLedgerGraph.vue'
 import MerkleTreeExplorer from '../components/MerkleTreeExplorer.vue'
@@ -14,7 +16,26 @@ import { useAuthStore } from '../store/auth'
 const notifyStore = useNotificationStore()
 const dashboardStore = useDashboardStore()
 const auth = useAuthStore()
+const theme = useTheme()
 const canWriteApps = computed(() => auth.can('apps:write'))
+const isDarkTheme = computed(() => theme.global.current.value.dark)
+
+const monacoOptions = {
+  readOnly: true,
+  minimap: { enabled: false },
+  scrollBeyondLastLine: false,
+  fontSize: 12,
+  lineNumbers: 'on' as const,
+  padding: { top: 8, bottom: 8 },
+  automaticLayout: true,
+  wordWrap: 'on' as const,
+  folding: true,
+  renderLineHighlight: 'none' as const,
+  scrollbar: { verticalScrollbarSize: 6, horizontalScrollbarSize: 6 },
+}
+
+const namespaces = ref<string[]>(['default'])
+const isLoadingNamespaces = ref(false)
 
 const step = ref(1)
 const builderPanels = ref<number[]>([])
@@ -326,6 +347,12 @@ onMounted(() => {
   dashboardStore.fetchApplications(true).catch(() => undefined)
   // Populate the SCA dropdown so the builder cannot reference a missing policy.
   dashboardStore.fetchPolicies(true).catch(() => undefined)
+  // Fetch cluster namespaces for the target namespace and network policy dropdowns.
+  isLoadingNamespaces.value = true
+  api.get('/jit/namespaces')
+    .then((res) => { namespaces.value = res.data.namespaces || ['default'] })
+    .catch(() => undefined)
+    .finally(() => { isLoadingNamespaces.value = false })
 })
 
 onUnmounted(() => {
@@ -605,7 +632,15 @@ function submitDeclaration() {
                           <v-text-field v-model="form.name" label="App Name" variant="outlined" density="compact"></v-text-field>
                         </v-col>
                         <v-col cols="12" md="6">
-                          <v-text-field v-model="form.namespace" label="Target Namespace" variant="outlined" density="compact"></v-text-field>
+                          <v-select
+                            v-model="form.namespace"
+                            :items="namespaces"
+                            label="Target Namespace"
+                            variant="outlined"
+                            density="compact"
+                            :loading="isLoadingNamespaces"
+                            no-data-text="No namespaces found in cluster"
+                          ></v-select>
                         </v-col>
                         <v-col cols="12" md="6">
                           <v-select
@@ -651,10 +686,30 @@ function submitDeclaration() {
                       <h3 class="text-subtitle-1 font-weight-medium mb-4">Microsegmentation & Coraza WAF</h3>
                       <v-row>
                         <v-col cols="12" md="6">
-                          <v-text-field v-model="form.ingressNamespace" label="Allow Ingress From" variant="outlined" density="compact"></v-text-field>
+                          <v-combobox
+                            v-model="form.ingressNamespace"
+                            :items="namespaces"
+                            label="Allow Ingress From (namespace)"
+                            variant="outlined"
+                            density="compact"
+                            :loading="isLoadingNamespaces"
+                            no-data-text="No namespaces found"
+                            hint="Select a cluster namespace or type a custom one"
+                            persistent-hint
+                          ></v-combobox>
                         </v-col>
                         <v-col cols="12" md="6">
-                          <v-text-field v-model="form.egressNamespace" label="Allow Egress To" variant="outlined" density="compact"></v-text-field>
+                          <v-combobox
+                            v-model="form.egressNamespace"
+                            :items="namespaces"
+                            label="Allow Egress To (namespace)"
+                            variant="outlined"
+                            density="compact"
+                            :loading="isLoadingNamespaces"
+                            no-data-text="No namespaces found"
+                            hint="Select a cluster namespace or type a custom one"
+                            persistent-hint
+                          ></v-combobox>
                         </v-col>
                         <v-col cols="12" md="6">
                           <v-text-field v-model="form.egressPorts" label="Allowed Egress Ports" variant="outlined" density="compact"></v-text-field>
@@ -697,8 +752,14 @@ function submitDeclaration() {
                     <div class="pa-4">
                       <h3 class="text-subtitle-1 font-weight-medium mb-4">Review & Propose via GitOps</h3>
 
-                      <div class="bg-surface-variant pa-4 rounded gc-border font-mono text-caption overflow-auto" style="max-height: 250px;">
-<pre>{{ yamlPreview }}</pre>
+                      <div class="rounded overflow-hidden gc-border" style="height: 310px;">
+                        <VueMonacoEditor
+                          :value="yamlPreview"
+                          language="yaml"
+                          :theme="isDarkTheme ? 'vs-dark' : 'vs'"
+                          :options="monacoOptions"
+                          style="height: 100%; width: 100%;"
+                        />
                       </div>
 
                       <div class="d-flex mt-6">

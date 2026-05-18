@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 
 const props = defineProps<{
   flow?: Record<string, any> | null
@@ -41,6 +41,8 @@ const showRetry = computed(() => {
 // then a running one, then the very first stage. This way the user sees
 // "why" a deploy is stuck without having to click around.
 const selectedStageId = ref<string | null>(null)
+const detailPanelRef = ref<HTMLElement | null>(null)
+const stageNodeRefs = ref<Record<string, HTMLElement | null>>({})
 
 watch(
   () => props.flow?.stages,
@@ -65,6 +67,13 @@ const selectedStage = computed(() => {
 
 function selectStage(stageId: string) {
   selectedStageId.value = stageId
+  nextTick(() => {
+    // Scroll the clicked node into view horizontally within the pipeline track
+    const nodeEl = stageNodeRefs.value[stageId]
+    nodeEl?.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' })
+    // Scroll the detail panel into vertical view so the user sees it immediately
+    detailPanelRef.value?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+  })
 }
 </script>
 
@@ -101,6 +110,7 @@ function selectStage(stageId: string) {
       <div class="pipeline-track" role="list">
         <template v-for="(stage, index) in flow.stages" :key="stage.id">
           <button
+            :ref="(el) => { stageNodeRefs[stage.id] = el as HTMLElement }"
             type="button"
             class="pipeline-node"
             :class="[
@@ -137,7 +147,7 @@ function selectStage(stageId: string) {
            Acts like the expanded job view in GitHub Actions — shows the
            sub-task forensics so the user knows *why* a step is in its
            current state. -->
-      <div v-if="selectedStage" class="detail-panel" :class="`tone-${toneColor(selectedStage.status)}`">
+      <div v-if="selectedStage" ref="detailPanelRef" class="detail-panel" :class="`tone-${toneColor(selectedStage.status)}`">
         <div class="detail-header">
           <div class="detail-pill" :class="`tone-${toneColor(selectedStage.status)}`">
             <v-icon size="20" :class="{ spin: selectedStage.status === 'running' }">
@@ -221,7 +231,7 @@ function selectStage(stageId: string) {
   flex-shrink: 0;
   padding: 10px 14px;
   border-radius: 12px;
-  border: 1px solid rgba(var(--v-theme-on-surface), 0.12);
+  border: 3px solid rgba(var(--v-theme-on-surface), 0.22);
   background: rgba(var(--v-theme-surface), 1);
   cursor: pointer;
   text-align: left;
@@ -303,7 +313,7 @@ function selectStage(stageId: string) {
 
 /* --- Detail panel (sub-tasks accordion) ---------------------------- */
 .detail-panel {
-  border: 1px solid rgba(var(--v-theme-on-surface), 0.1);
+  border: 3px solid rgba(var(--v-theme-on-surface), 0.15);
   border-radius: 14px;
   padding: 14px 16px;
   background: rgba(var(--v-theme-surface), 1);
@@ -311,17 +321,19 @@ function selectStage(stageId: string) {
 }
 
 .detail-panel.tone-error {
-  border-color: rgba(var(--v-theme-error), 0.35);
-  background: linear-gradient(145deg, rgba(var(--v-theme-error), 0.04), rgba(var(--v-theme-surface), 1));
+  border-color: rgb(var(--v-theme-error));
 }
 
 .detail-panel.tone-info {
-  border-color: rgba(var(--v-theme-info), 0.35);
-  background: linear-gradient(145deg, rgba(var(--v-theme-info), 0.04), rgba(var(--v-theme-surface), 1));
+  border-color: rgb(var(--v-theme-info));
 }
 
 .detail-panel.tone-success {
-  border-color: rgba(var(--v-theme-success), 0.25);
+  border-color: rgb(var(--v-theme-success));
+}
+
+.detail-panel.tone-warning {
+  border-color: rgb(var(--v-theme-warning));
 }
 
 .detail-header {
@@ -353,28 +365,28 @@ function selectStage(stageId: string) {
   gap: 12px;
   padding: 10px 12px;
   border-radius: 10px;
-  background: rgba(var(--v-theme-on-surface), 0.03);
-  border: 1px solid rgba(var(--v-theme-on-surface), 0.06);
+  background: rgba(var(--v-theme-surface), 1);
+  border: 3px solid rgba(var(--v-theme-on-surface), 0.1);
 }
 
 .subtask-row.subtask-tone-error {
-  background: rgba(var(--v-theme-error), 0.08);
-  border-color: rgba(var(--v-theme-error), 0.25);
+  background: rgba(var(--v-theme-surface), 1);
+  border-color: rgb(var(--v-theme-error));
 }
 
 .subtask-row.subtask-tone-success {
-  background: rgba(var(--v-theme-success), 0.06);
-  border-color: rgba(var(--v-theme-success), 0.2);
+  background: rgba(var(--v-theme-surface), 1);
+  border-color: rgb(var(--v-theme-success));
 }
 
 .subtask-row.subtask-tone-info {
-  background: rgba(var(--v-theme-info), 0.06);
-  border-color: rgba(var(--v-theme-info), 0.2);
+  background: rgba(var(--v-theme-surface), 1);
+  border-color: rgb(var(--v-theme-info));
 }
 
 .subtask-row.subtask-tone-warning {
-  background: rgba(var(--v-theme-warning), 0.06);
-  border-color: rgba(var(--v-theme-warning), 0.2);
+  background: rgba(var(--v-theme-surface), 1);
+  border-color: rgb(var(--v-theme-warning));
 }
 
 .subtask-icon {
@@ -421,7 +433,7 @@ function selectStage(stageId: string) {
   border-color: rgba(var(--v-theme-on-surface), 0.2);
 }
 
-/* keep button-level node tones from overriding the inner pill */
+/* Pipeline node tones: only border is colored, background stays surface */
 .pipeline-node.tone-success,
 .pipeline-node.tone-error,
 .pipeline-node.tone-warning,
@@ -430,8 +442,14 @@ function selectStage(stageId: string) {
 .pipeline-node.tone-default {
   background: rgba(var(--v-theme-surface), 1);
   color: inherit;
-  border-color: rgba(var(--v-theme-on-surface), 0.12);
 }
+
+.pipeline-node.tone-success { border: 3px solid rgb(var(--v-theme-success)); }
+.pipeline-node.tone-error   { border: 3px solid rgb(var(--v-theme-error)); }
+.pipeline-node.tone-warning { border: 3px solid rgb(var(--v-theme-warning)); }
+.pipeline-node.tone-info    { border: 3px solid rgb(var(--v-theme-info)); }
+.pipeline-node.tone-secondary,
+.pipeline-node.tone-default { border: 3px solid rgba(var(--v-theme-on-surface), 0.22); }
 
 .spin {
   animation: spin 1s linear infinite;

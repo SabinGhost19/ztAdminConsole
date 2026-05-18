@@ -763,22 +763,22 @@ async function savePolicies() {
             <div class="text-caption text-secondary mb-4">Editează direct ConfigMap-ul `jit-security-policies` din cluster.</div>
             <v-skeleton-loader v-if="isLoadingPolicies" type="article"></v-skeleton-loader>
             <template v-else>
-              <v-textarea v-model="policyForm.blockedUsersText" label="Blocked Users" rows="5" variant="outlined" density="compact" hint="One identity per line" persistent-hint></v-textarea>
+              <v-textarea v-model="policyForm.blockedUsersText" label="Blocked Users" rows="5" variant="outlined" density="compact" hint="One identity per line" persistent-hint class="mb-4"></v-textarea>
               <v-row>
                 <v-col cols="12" md="6">
-                  <v-text-field v-model.number="policyForm.maxActiveSessions" type="number" label="Max Active Sessions" variant="outlined" density="compact"></v-text-field>
+                  <v-text-field v-model.number="policyForm.maxActiveSessions" type="number" label="Max Active Sessions" variant="outlined" density="compact" hide-details></v-text-field>
                 </v-col>
                 <v-col cols="12" md="6">
-                  <v-text-field v-model.number="policyForm.cooldownMinutes" type="number" label="Cooldown Minutes" variant="outlined" density="compact"></v-text-field>
+                  <v-text-field v-model.number="policyForm.cooldownMinutes" type="number" label="Cooldown Minutes" variant="outlined" density="compact" hide-details></v-text-field>
                 </v-col>
                 <v-col cols="12" md="6">
-                  <v-text-field v-model.number="policyForm.maxRequestsPerDay" type="number" label="Max Requests / Day" variant="outlined" density="compact"></v-text-field>
+                  <v-text-field v-model.number="policyForm.maxRequestsPerDay" type="number" label="Max Requests / Day" variant="outlined" density="compact" hide-details></v-text-field>
                 </v-col>
                 <v-col cols="12" md="6">
-                  <v-text-field v-model.number="policyForm.maxDurationMinutes" type="number" label="Max Duration Minutes" variant="outlined" density="compact"></v-text-field>
+                  <v-text-field v-model.number="policyForm.maxDurationMinutes" type="number" label="Max Duration Minutes" variant="outlined" density="compact" hide-details></v-text-field>
                 </v-col>
               </v-row>
-              <v-btn color="primary" variant="flat" :loading="isSavingPolicies" :disabled="!canWritePolicy" @click="savePolicies">
+              <v-btn color="primary" variant="flat" :loading="isSavingPolicies" :disabled="!canWritePolicy" @click="savePolicies" class="mt-4">
                 {{ canWritePolicy ? 'Apply Cluster Policy' : 'Necesită platform-engineer' }}
               </v-btn>
             </template>
