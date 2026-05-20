@@ -1,3 +1,10 @@
+## [1.10.3](https://github.com/SabinGhost19/ztAdminConsole/compare/v1.10.2...v1.10.3) (2026-05-20)
+
+
+### Bug Fixes
+
+* **guac:** align default service URLs with the official guacsec/guac chart ([daf2cd0](https://github.com/SabinGhost19/ztAdminConsole/commit/daf2cd0a07f59d49636bfd7dfad97e327147a852))
+
 ## [1.10.2](https://github.com/SabinGhost19/ztAdminConsole/compare/v1.10.1...v1.10.2) (2026-05-20)
 
 
