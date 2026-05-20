@@ -1,3 +1,10 @@
+# [1.10.0](https://github.com/SabinGhost19/ztAdminConsole/compare/v1.9.4...v1.10.0) (2026-05-20)
+
+
+### Features
+
+* **supply-chain:** RFC 6962 Merkle + Audit-mode + webhook + CEL + VEX + KubeArmor + GUAC ([2f1b7f6](https://github.com/SabinGhost19/ztAdminConsole/commit/2f1b7f6ea4283ad4913678922be34d7cbcc03e5f))
+
 ## [1.9.4](https://github.com/SabinGhost19/ztAdminConsole/compare/v1.9.3...v1.9.4) (2026-05-18)
 
 
