@@ -4,6 +4,7 @@ import { api } from '../api/axios'
 import { useNotificationStore } from '../store/notification'
 import { useDashboardStore } from '../store/dashboard'
 import { useAuthStore } from '../store/auth'
+import CelPoliciesPanel from '../components/CelPoliciesPanel.vue'
 
 const notifyStore = useNotificationStore()
 const dashboardStore = useDashboardStore()
@@ -454,6 +455,10 @@ async function revokeSca(name: string) {
             </v-row>
           </v-card-text>
         </v-card>
+      </v-col>
+
+      <v-col cols="12">
+        <CelPoliciesPanel :rules="selectedPolicyObject.summary?.customRules || []" />
       </v-col>
 
       <v-col cols="12">

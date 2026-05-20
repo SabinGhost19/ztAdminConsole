@@ -80,6 +80,15 @@ const routes: RouteRecordRaw[] = [
     },
   },
   {
+    path: '/blast-radius',
+    name: 'Blast Radius (GUAC)',
+    component: () => import('../views/BlastRadius.vue'),
+    meta: {
+      requiresPermission: ['security:read'],
+      title: 'Blast Radius (GUAC)',
+    },
+  },
+  {
     path: '/break-glass',
     name: 'Break-Glass (eBPF Honeypot)',
     component: () => import('../views/BreakGlass.vue'),

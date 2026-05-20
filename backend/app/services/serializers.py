@@ -104,13 +104,41 @@ def serialize_zta_resource(item: dict[str, Any]) -> dict[str, Any]:
     provenance = status.get("provenance", {}) or {}
     last_error = str(status.get("lastError", "") or "").strip()
     last_error_summary = _summarize_error_text(last_error)
-    expected_infra_hash = str((((status.get("attestations", {}) or {}).get("expectedInfraHash", "")) or "")).strip()
-    computed_infra_hash = str((((status.get("attestations", {}) or {}).get("computedInfraHash", "")) or "")).strip()
+    attestations = status.get("attestations", {}) or {}
+    expected_infra_hash = str((attestations.get("expectedInfraHash", "")) or "").strip()
+    computed_infra_hash = str((attestations.get("computedInfraHash", "")) or "").strip()
     has_hash_mismatch = bool(
         expected_infra_hash
         and computed_infra_hash
         and expected_infra_hash.lower().removeprefix("sha256:") != computed_infra_hash.lower().removeprefix("sha256:")
     )
+
+    # New surfaces (RFC 6962 Merkle v2, OpenVEX, CEL, audit-mode, async GUAC).
+    security_state = str(status.get("securityState", "Unknown") or "Unknown")
+    is_audit_alert = security_state.lower() == "alert"
+    voucher = (provenance.get("voucher", {}) or {})
+    merkle_tree = (voucher.get("merkle_tree", {}) or {}) if isinstance(voucher, dict) else {}
+    merkle_version = int(merkle_tree.get("version", 1) or 1) if merkle_tree else int(
+        (provenance.get("merkle", {}) or {}).get("merkleVersion", 1) or 1
+    )
+    merkle_algorithm = str(
+        merkle_tree.get("algorithm")
+        or (provenance.get("merkle", {}) or {}).get("merkleAlgorithm")
+        or "plain-sha256"
+    )
+    build_context = (voucher.get("build_context", {}) or {}) if isinstance(voucher, dict) else {}
+    hmac_chain_predicate = (voucher.get("hmac_chain", {}) or {}) if isinstance(voucher, dict) else {}
+
+    vex_statements = attestations.get("vexStatements", []) or []
+    vex_exempted = attestations.get("vexExempted", []) or []
+    cel_evaluations = attestations.get("celEvaluations", []) or []
+
+    guac_ingestion = {
+        "status": str(status.get("guacIngestionStatus", "") or ""),
+        "message": str(status.get("guacIngestionMessage", "") or ""),
+        "completedAt": status.get("guacIngestionCompletedAt"),
+    }
+
     return {
         "metadata": _metadata(item),
         "spec": spec,
@@ -121,7 +149,8 @@ def serialize_zta_resource(item: dict[str, Any]) -> dict[str, Any]:
             "securityPolicyRef": policy_ref,
             "phase": status.get("phase", "Pending"),
             "trustLevel": status.get("trustLevel", "Untrusted"),
-            "securityState": status.get("securityState", "Unknown"),
+            "securityState": security_state,
+            "isAuditAlert": is_audit_alert,
             "lastVerified": status.get("lastVerified"),
             "violations": active_violations,
             "hasViolations": bool(active_violations),
@@ -134,6 +163,31 @@ def serialize_zta_resource(item: dict[str, Any]) -> dict[str, Any]:
             "hasHashMismatch": has_hash_mismatch,
             "provenanceVerifiedAt": provenance.get("verifiedAt"),
             "provenanceRequired": provenance.get("required", False),
+            "merkle": {
+                "version": merkle_version,
+                "algorithm": merkle_algorithm,
+                "rfc6962": merkle_version >= 2 or merkle_algorithm == "rfc6962-sha256",
+                "rootHash": merkle_tree.get("root_hash")
+                or (provenance.get("merkle", {}) or {}).get("computedRoot"),
+                "leafCount": (
+                    len(merkle_tree.get("leaves", []) or [])
+                    if merkle_tree.get("leaves") is not None
+                    else (provenance.get("merkle", {}) or {}).get("leafCount")
+                ),
+            },
+            "voucher": {
+                "buildContext": build_context,
+                "hmacChainProvider": hmac_chain_predicate.get("provider"),
+                "slsaLevel": build_context.get("slsa_level") or provenance.get("slsaLevel"),
+                "repository": build_context.get("repository") or provenance.get("repository"),
+            },
+            "vex": {
+                "statements": vex_statements,
+                "exemptedCveIds": vex_exempted,
+                "exemptedCount": len(vex_exempted),
+            },
+            "celEvaluations": cel_evaluations,
+            "guacIngestion": guac_ingestion,
         },
     }
 
@@ -167,6 +221,8 @@ def serialize_sca_resource(item: dict[str, Any]) -> dict[str, Any]:
     vulnerability_policy = spec.get("vulnerabilityPolicy", {}) or {}
     runtime = spec.get("runtimeEnforcement", {}) or {}
     sbom_policy = spec.get("sbomPolicy", {}) or {}
+    strict_manifest_hash = spec.get("strictManifestHash", {}) or {}
+    custom_rules = spec.get("customRules", []) or []
     return {
         "metadata": _metadata(item),
         "spec": spec,
@@ -183,5 +239,21 @@ def serialize_sca_resource(item: dict[str, Any]) -> dict[str, Any]:
             "forbiddenPackages": sbom_policy.get("forbiddenPackages", []) or [],
             "onPolicyDrift": runtime.get("onPolicyDrift", "Isolate"),
             "onVulnerabilityFound": runtime.get("onVulnerabilityFound", "Alert"),
+            "strictManifestHash": {
+                "enabled": bool(strict_manifest_hash.get("enabled", False)),
+                "enforcementAction": str(strict_manifest_hash.get("enforcementAction", "Reject") or "Reject"),
+                "isAuditMode": str(strict_manifest_hash.get("enforcementAction", "") or "").lower() == "alert",
+            },
+            "customRules": [
+                {
+                    "name": str(rule.get("name", "") or ""),
+                    "description": str(rule.get("description", "") or ""),
+                    "expression": str(rule.get("expression", "") or ""),
+                    "action": str(rule.get("action", "Deny") or "Deny"),
+                }
+                for rule in custom_rules
+                if isinstance(rule, dict)
+            ],
+            "customRulesCount": len(custom_rules),
         },
     }

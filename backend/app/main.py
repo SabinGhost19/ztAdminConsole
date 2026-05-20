@@ -12,6 +12,7 @@ from app.api import (
     auth_routes,
     breakglass_routes,
     drift_routes,
+    guac_routes,
     integrity_routes,
     jit_routes,
     overview_routes,
@@ -270,6 +271,12 @@ app.include_router(
     system_routes.router,
     prefix="/api/v1/system",
     tags=["Observability"],
+    dependencies=[_Depends(_req(_p.P_SECURITY_READ))],
+)
+app.include_router(
+    guac_routes.router,
+    prefix="/api/v1/guac",
+    tags=["GUAC Knowledge Graph"],
     dependencies=[_Depends(_req(_p.P_SECURITY_READ))],
 )
 app.include_router(breakglass_routes.router, prefix="/api/v1/breakglass", tags=["Break-Glass / eBPF Honeypot"])

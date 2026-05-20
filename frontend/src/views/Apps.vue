@@ -8,6 +8,7 @@ import BuildLedgerGraph from '../components/BuildLedgerGraph.vue'
 import ProvisioningPlan from '../components/ProvisioningPlan.vue'
 import ReconcileFlow from '../components/ReconcileFlow.vue'
 import SbomTree from '../components/SbomTree.vue'
+import VexExemptionsTable from '../components/VexExemptionsTable.vue'
 import { useNotificationStore } from '../store/notification'
 import { useDashboardStore } from '../store/dashboard'
 import { useAuthStore } from '../store/auth'
@@ -76,6 +77,10 @@ const isLoadingPolicies = computed(() => dashboardStore.loadingPolicies)
 
 function applicationSeverity(app: any) {
   const summary = app?.summary || {}
+  // Audit-mode (enforcementAction: Alert) — the operator created the
+  // Deployment but flagged a non-blocking violation. Render orange to
+  // distinguish from both hard failures (red) and clean state (green).
+  if (summary.isAuditAlert || (summary.securityState || '').toLowerCase() === 'alert') return 'warning'
   if (summary.hasErrors || summary.hasHashMismatch) return 'error'
   if (summary.hasViolations || !['Compliant', 'PendingProvenance'].includes(summary.securityState || '')) return 'error'
   if (summary.trustLevel === 'Verified') return 'success'
@@ -84,6 +89,7 @@ function applicationSeverity(app: any) {
 
 function applicationIcon(app: any) {
   const summary = app?.summary || {}
+  if (summary.isAuditAlert || (summary.securityState || '').toLowerCase() === 'alert') return 'mdi-shield-alert-outline'
   if (summary.hasHashMismatch) return 'mdi-file-document-alert'
   if (summary.hasErrors) return 'mdi-alert-octagon'
   if (summary.hasViolations || !['Compliant', 'PendingProvenance'].includes(summary.securityState || '')) return 'mdi-shield-alert'
@@ -93,11 +99,30 @@ function applicationIcon(app: any) {
 
 function applicationBadge(app: any) {
   const summary = app?.summary || {}
+  if (summary.isAuditAlert || (summary.securityState || '').toLowerCase() === 'alert') return 'Audit Mode'
   if (summary.hasHashMismatch) return 'Manifest Mismatch'
   if (summary.hasErrors) return 'Verification Failed'
   if (summary.hasViolations) return 'Compliance Failed'
   if (summary.trustLevel === 'Verified') return 'Verified'
   return 'Pending'
+}
+
+function guacIngestionSeverity(app: any): 'success' | 'info' | 'warning' | 'error' | null {
+  const s = (app?.summary?.guacIngestion?.status || '').toLowerCase()
+  if (s === 'completed') return 'success'
+  if (s === 'inprogress') return 'info'
+  if (s === 'failed') return 'error'
+  if (s === 'disabled' || s === '') return null
+  return 'warning'
+}
+
+function guacIngestionLabel(app: any): string {
+  const s = (app?.summary?.guacIngestion?.status || '').toLowerCase()
+  if (s === 'completed') return 'Threat Intel ✓'
+  if (s === 'inprogress') return 'Fetching Intel…'
+  if (s === 'failed') return 'Intel Failed'
+  if (s === 'disabled') return 'Intel Off'
+  return ''
 }
 
 function ledgerColor(status: string) {
@@ -259,6 +284,32 @@ function isIntegrityFlowStable(payload: any): boolean {
   }
   return false
 }
+
+const selectedAppSummary = computed(() => integrityDetails.value?.application?.summary || {})
+
+const vexExemptedCveIds = computed<string[]>(() => {
+  return (selectedAppSummary.value?.vex?.exemptedCveIds || []) as string[]
+})
+
+const trivyFindings = computed(() => {
+  // The backend now surfaces details.vulnerabilities under integrityDetails;
+  // fall back gracefully if the field name differs to keep this resilient
+  // to future serializer changes.
+  const details = integrityDetails.value || {}
+  const raw =
+    details.vulnerabilities
+    || details.application?.status?.attestations?.trivyFindings
+    || []
+  return (raw as any[]).map((row) => ({
+    cveId: row.cveId || row.VulnerabilityID || row.vulnerabilityID || '',
+    severity: row.severity || row.Severity || 'UNKNOWN',
+    packageName: row.packageName || row.PkgName || '',
+    packageVersion: row.packageVersion || row.InstalledVersion || '',
+    fixedVersion: row.fixedVersion || row.FixedVersion || '',
+    vexStatus: row.vexStatus || row.VexStatus || '',
+    vexJustification: row.vexJustification || '',
+  })).filter((row) => row.cveId)
+})
 
 const integrityCriticalIssues = computed(() => {
   const details = integrityDetails.value
@@ -523,9 +574,47 @@ function submitDeclaration() {
                 <v-list-item-title class="d-flex align-center ga-2 flex-wrap">
                   <span>{{ app.metadata.name }}</span>
                   <v-chip :color="applicationSeverity(app)" size="x-small" variant="tonal">{{ applicationBadge(app) }}</v-chip>
+                  <v-chip
+                    v-if="guacIngestionSeverity(app)"
+                    :color="guacIngestionSeverity(app) || undefined"
+                    size="x-small"
+                    variant="tonal"
+                    prepend-icon="mdi-graph-outline"
+                  >
+                    <span>{{ guacIngestionLabel(app) }}</span>
+                    <v-progress-circular
+                      v-if="(app.summary?.guacIngestion?.status || '').toLowerCase() === 'inprogress'"
+                      indeterminate
+                      size="10"
+                      width="2"
+                      class="ms-1"
+                    />
+                  </v-chip>
+                  <v-chip
+                    v-if="(app.summary?.vex?.exemptedCount || 0) > 0"
+                    color="success"
+                    size="x-small"
+                    variant="tonal"
+                    prepend-icon="mdi-shield-check-outline"
+                  >
+                    VEX {{ app.summary.vex.exemptedCount }}
+                  </v-chip>
+                  <v-chip
+                    v-if="app.summary?.merkle?.rfc6962"
+                    color="primary"
+                    size="x-small"
+                    variant="tonal"
+                    prepend-icon="mdi-merge"
+                    title="Merkle tree uses RFC 6962 domain separation (0x00 leaf / 0x01 node)"
+                  >
+                    Merkle v{{ app.summary.merkle.version }}
+                  </v-chip>
                 </v-list-item-title>
                 <v-list-item-subtitle>
                   {{ app.summary.securityPolicyRef }} • {{ app.summary.securityState }}
+                  <div v-if="app.summary.isAuditAlert" class="text-warning font-weight-medium mt-1">
+                    Manifest Hash Drift Detected — Allowed due to Audit Policy
+                  </div>
                   <div v-if="app.summary.lastError" class="text-error font-weight-medium mt-1">
                     {{ app.summary.lastErrorSummary || app.summary.lastError }}
                   </div>
@@ -922,6 +1011,96 @@ function submitDeclaration() {
 
       <div class="dashboard-panel span-12">
         <SbomTree :groups="integrityDetails.sbomTree || []" />
+      </div>
+
+      <div class="dashboard-panel span-12">
+        <VexExemptionsTable
+          :findings="trivyFindings"
+          :exempted-cve-ids="vexExemptedCveIds"
+        />
+      </div>
+
+      <div class="dashboard-panel span-7-lg span-12-sm" v-if="selectedAppSummary?.merkle">
+        <v-card class="gc-border panel-card" flat>
+          <v-card-title class="text-primary panel-title">
+            <v-icon start size="small" color="primary">mdi-merge</v-icon>
+            VBBI Merkle Tree
+          </v-card-title>
+          <v-card-text class="panel-content">
+            <div class="d-flex align-center ga-2 flex-wrap mb-2">
+              <v-chip size="small"
+                :color="selectedAppSummary.merkle.rfc6962 ? 'success' : 'warning'"
+                variant="tonal"
+                :prepend-icon="selectedAppSummary.merkle.rfc6962 ? 'mdi-shield-lock' : 'mdi-alert'"
+              >
+                {{ selectedAppSummary.merkle.algorithm || 'plain-sha256' }} (v{{ selectedAppSummary.merkle.version }})
+              </v-chip>
+              <v-chip size="small" variant="outlined">leaves: {{ selectedAppSummary.merkle.leafCount ?? '?' }}</v-chip>
+            </div>
+            <div class="text-caption text-medium-emphasis mb-2">
+              <span v-if="selectedAppSummary.merkle.rfc6962">
+                Domain-separated hashing per RFC 6962 §2.1:
+                <code>SHA-256(0x00 ‖ leaf)</code> / <code>SHA-256(0x01 ‖ left ‖ right)</code>.
+                Previne atacuri second-preimage prin separarea spațiilor de hashing
+                pentru frunze vs noduri interne.
+              </span>
+              <span v-else>
+                Voucher legacy fără separare de domeniu — re-execută pipeline-ul pentru
+                a obține un Merkle tree v2 (RFC 6962).
+              </span>
+            </div>
+            <div class="forensic-item">
+              <div class="forensic-label">Root hash</div>
+              <div class="forensic-value font-mono" style="word-break: break-all;">
+                {{ selectedAppSummary.merkle.rootHash || 'unavailable' }}
+              </div>
+            </div>
+            <div class="forensic-item mt-2" v-if="selectedAppSummary.voucher?.slsaLevel">
+              <div class="forensic-label">SLSA level declared by VBBI</div>
+              <div class="forensic-value">{{ selectedAppSummary.voucher.slsaLevel }}</div>
+            </div>
+            <div class="forensic-item" v-if="selectedAppSummary.voucher?.hmacChainProvider">
+              <div class="forensic-label">HMAC chain provider</div>
+              <div class="forensic-value">{{ selectedAppSummary.voucher.hmacChainProvider }}</div>
+            </div>
+          </v-card-text>
+        </v-card>
+      </div>
+
+      <div class="dashboard-panel span-5-lg span-12-sm" v-if="selectedAppSummary?.guacIngestion">
+        <v-card class="gc-border panel-card" flat>
+          <v-card-title class="text-primary panel-title">
+            <v-icon start size="small" color="primary">mdi-graph-outline</v-icon>
+            GUAC Threat Intel
+          </v-card-title>
+          <v-card-text class="panel-content">
+            <v-chip
+              :color="(selectedAppSummary.guacIngestion.status || '').toLowerCase() === 'completed' ? 'success'
+                : (selectedAppSummary.guacIngestion.status || '').toLowerCase() === 'inprogress' ? 'info'
+                : (selectedAppSummary.guacIngestion.status || '').toLowerCase() === 'failed' ? 'error' : 'grey'"
+              variant="tonal"
+              size="small"
+            >
+              {{ selectedAppSummary.guacIngestion.status || 'unknown' }}
+            </v-chip>
+            <div class="text-caption text-medium-emphasis mt-2">
+              {{ selectedAppSummary.guacIngestion.message || 'no message' }}
+            </div>
+            <div class="text-caption text-medium-emphasis mt-1" v-if="selectedAppSummary.guacIngestion.completedAt">
+              completed at: {{ selectedAppSummary.guacIngestion.completedAt }}
+            </div>
+            <v-btn
+              class="mt-3"
+              size="small"
+              color="primary"
+              variant="outlined"
+              prepend-icon="mdi-radar"
+              :to="'/blast-radius'"
+            >
+              Open Blast Radius
+            </v-btn>
+          </v-card-text>
+        </v-card>
       </div>
 
       <div class="dashboard-panel span-5-lg span-12-sm">
