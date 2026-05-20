@@ -10,7 +10,7 @@
  *         coloured red for affected / green for VEX-exempted.
  */
 import { reactive, ref } from 'vue'
-import axios from '@/api/axios'
+import { api } from '../api/axios'
 
 interface DeploymentEntry {
   namespace?: string
@@ -49,7 +49,7 @@ const guacHealth = ref<{ reachable: boolean; endpoint?: string; reason?: string 
 
 async function probeGuac() {
   try {
-    const { data } = await axios.get('/api/v1/guac/health')
+    const { data } = await api.get('/guac/health')
     guacHealth.value = data
   } catch {
     guacHealth.value = { reachable: false, reason: 'health endpoint unreachable' }
@@ -64,7 +64,7 @@ async function runQuery() {
   state.errorMessage = ''
   state.loading = true
   try {
-    const { data } = await axios.get<BlastRadiusResponse>('/api/v1/guac/blast-radius', {
+    const { data } = await api.get<BlastRadiusResponse>('/guac/blast-radius', {
       params: { cve: state.cve.trim().toUpperCase(), enrich_cluster: true },
     })
     state.data = data
