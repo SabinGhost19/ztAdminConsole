@@ -1,3 +1,10 @@
+## [1.10.2](https://github.com/SabinGhost19/ztAdminConsole/compare/v1.10.1...v1.10.2) (2026-05-20)
+
+
+### Bug Fixes
+
+* **frontend:** return 404 for missing Vite assets instead of index.html ([87b8077](https://github.com/SabinGhost19/ztAdminConsole/commit/87b8077bb763621aecba0933fc17f53d360cc195))
+
 ## [1.10.1](https://github.com/SabinGhost19/ztAdminConsole/compare/v1.10.0...v1.10.1) (2026-05-20)
 
 
