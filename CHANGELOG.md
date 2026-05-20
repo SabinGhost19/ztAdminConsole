@@ -1,3 +1,10 @@
+## [1.10.1](https://github.com/SabinGhost19/ztAdminConsole/compare/v1.10.0...v1.10.1) (2026-05-20)
+
+
+### Bug Fixes
+
+* frontend build ([88d4a23](https://github.com/SabinGhost19/ztAdminConsole/commit/88d4a23ff479c92bbacc4929f4cbbab9434ce5ad))
+
 # [1.10.0](https://github.com/SabinGhost19/ztAdminConsole/compare/v1.9.4...v1.10.0) (2026-05-20)
 
 
