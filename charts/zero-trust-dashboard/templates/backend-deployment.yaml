@@ -68,6 +68,10 @@ spec:
               value: {{ .Values.auth.bypass | quote }}
             - name: BYPASS_AUTH_EMAIL
               value: {{ .Values.auth.bypassEmail | quote }}
+            ## --- GUAC knowledge-graph proxy (services/guac_service.py) ----
+            ## Set guac.graphqlUrl to "" in values.yaml to disable Blast Radius.
+            - name: GUAC_GRAPHQL_URL
+              value: {{ .Values.guac.graphqlUrl | quote }}
             {{- if .Values.breakglass.enabled }}
             - name: BREAKGLASS_JWT_PRIVATE_KEY_PATH
               value: /etc/breakglass/private.pem

@@ -23,9 +23,12 @@ logger = logging.getLogger("zero_trust_guac_service")
 
 
 def _endpoint() -> str:
+    # Default tracks the official `guacsec/guac` Helm chart Service names:
+    #   Service/graphql-server  :8080  /query
+    # Override per-cluster with GUAC_GRAPHQL_URL on the backend deployment.
     return os.environ.get(
         "GUAC_GRAPHQL_URL",
-        "http://guac-graphql-server.guac.svc.cluster.local:8080/query",
+        "http://graphql-server.guac.svc.cluster.local:8080/query",
     ).strip()
 
 

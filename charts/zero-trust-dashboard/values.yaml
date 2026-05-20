@@ -68,6 +68,14 @@ auth:
   ## for e2e tests that grep audit logs by email.
   bypassEmail: "dev@devsecops.licenta.ro"
 
+## GUAC (Graph for Understanding Artifact Composition) — knowledge-graph
+## proxy used by the Blast Radius UI. Tracks the official guacsec/guac
+## Helm chart Service name. Set graphqlUrl to "" to disable the feature
+## (the backend's /api/v1/guac/health endpoint will report "reachable: false"
+## and the UI will gracefully disable the Simulate Blast Radius button).
+guac:
+  graphqlUrl: http://graphql-server.guac.svc.cluster.local:8080/query
+
 ## Break-Glass / eBPF honeypot integration. The Secret is created by the
 ## ebpf-honeypot pre-install Job (jwt-keygen), see ebpf-honeypot/values.yaml
 ## (jwt.backendSecretName / jwt.backendNamespace).
