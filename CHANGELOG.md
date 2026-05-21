@@ -1,3 +1,10 @@
+## [1.10.5](https://github.com/SabinGhost19/ztAdminConsole/compare/v1.10.4...v1.10.5) (2026-05-21)
+
+
+### Bug Fixes
+
+* **dashboard:** accept GHSA and debian-cve identifiers in blast-radius route ([bc6df6e](https://github.com/SabinGhost19/ztAdminConsole/commit/bc6df6ee29bea6afd651f2737c08384f18ea89ad))
+
 ## [1.10.4](https://github.com/SabinGhost19/ztAdminConsole/compare/v1.10.3...v1.10.4) (2026-05-21)
 
 
