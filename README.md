@@ -72,6 +72,4 @@ attestation framework v1.0, DSSE v1.0.
 
 <br />
 
-<div align="center">
-<sub>Master's dissertation in Computer Science · Cluj-Napoca · 2026</sub>
-</div>
+
