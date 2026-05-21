@@ -1,3 +1,10 @@
+# [1.13.0](https://github.com/SabinGhost19/ztAdminConsole/compare/v1.12.0...v1.13.0) (2026-05-21)
+
+
+### Features
+
+* **jit:** instant approve UI, multi-select blocked users, live sessions ([0cbcfd4](https://github.com/SabinGhost19/ztAdminConsole/commit/0cbcfd42ce12681e2d4489e378a1b2cdf251809e))
+
 # [1.12.0](https://github.com/SabinGhost19/ztAdminConsole/compare/v1.11.0...v1.12.0) (2026-05-21)
 
 
