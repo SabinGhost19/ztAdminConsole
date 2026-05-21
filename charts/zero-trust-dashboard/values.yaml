@@ -5,7 +5,7 @@ frontend:
   image:
     repository: ghcr.io/sabinghost19/ztadminconsole-frontend
     pullPolicy: IfNotPresent
-    tag: "b26f6bc"
+    tag: "591573e"
   resources:
     limits:
       cpu: 100m
@@ -19,7 +19,7 @@ backend:
   image:
     repository: ghcr.io/sabinghost19/ztadminconsole-backend
     pullPolicy: IfNotPresent
-    tag: "b26f6bc"
+    tag: "591573e"
   resources:
     limits:
       cpu: 1000m
