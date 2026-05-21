@@ -5,6 +5,7 @@ import { useJitStore, JitSession } from '../store/jit'
 import { useNotificationStore } from '../store/notification'
 import { useDashboardStore } from '../store/dashboard'
 import { useAuthStore } from '../store/auth'
+import { ensureFreshToken, getToken, isBypass } from '../auth/keycloak'
 
 const jitStore = useJitStore()
 const notifyStore = useNotificationStore()
@@ -67,10 +68,88 @@ const isRevoking = ref(false)
 const jitSessions = ref<any[]>([])
 const jitSessionStats = ref<any | null>(null)
 const isLoadingSessions = ref(false)
-const isApprovingSession = ref(false)
 
 let timerId: ReturnType<typeof setInterval>
+let eventSource: EventSource | null = null
 const now = ref(Date.now())
+
+function applyStreamSnapshot(items: any[]) {
+  jitStore.applySnapshot(items)
+  const s = jitStore.sessions
+  jitSessionStats.value = {
+    total_sessions: s.length,
+    pending: s.filter(x => x.status === 'PENDING' || x.status === 'PENDING_APPROVAL').length,
+    active: s.filter(x => x.status === 'ACTIVE' || x.status === 'APPROVED').length,
+    expired: s.filter(x => x.status === 'EXPIRED' || x.status === 'REVOKED').length,
+  }
+  jitSessions.value = s.map(sess => ({
+    session_id: sess.id,
+    user_email: sess.user,
+    app_name: sess.namespace,
+    state: sess.status,
+    namespace: sess.namespace,
+    requested_at: sess.expiresAt,
+  }))
+  const mine = s.find(x => x.tokenIssued && x.commandToUse)
+  if (mine && (!generatedCommand.value || generatedCommand.value.startsWith('# Waiting'))) {
+    generatedCommand.value = mine.commandToUse!
+  }
+}
+
+async function startEventStream() {
+  if (eventSource) return
+  try {
+    const base = (api.defaults.baseURL || '').replace(/\/$/, '')
+    let url = `${base}/jit/stream`
+    if (!isBypass()) {
+      try { await ensureFreshToken(60) } catch { /* ignore */ }
+      const token = getToken()
+      if (token) url += `?access_token=${encodeURIComponent(token)}`
+    }
+    eventSource = new EventSource(url, { withCredentials: true })
+    eventSource.addEventListener('jit.snapshot', (ev: MessageEvent) => {
+      try {
+        const items = JSON.parse(ev.data)
+        applyStreamSnapshot(items)
+      } catch (err) {
+        console.warn('Bad SSE payload', err)
+      }
+    })
+    eventSource.addEventListener('jit.error', (ev: MessageEvent) => {
+      console.warn('JIT stream error', ev.data)
+    })
+    eventSource.onerror = () => {
+      // Browser will auto-reconnect. If permanently failing, fall back to manual fetch.
+      console.warn('SSE connection error; will auto-reconnect.')
+    }
+  } catch (err) {
+    console.error('Failed to open SSE', err)
+  }
+}
+
+function stopEventStream() {
+  if (eventSource) {
+    eventSource.close()
+    eventSource = null
+  }
+}
+
+async function approveSession(session: any) {
+  try {
+    await jitStore.approveSession(session.namespace || session.app_name, session.session_id)
+    notifyStore.addAlert({
+      error_code: 'JIT_APPROVED',
+      message: `Cererea ${session.session_id} a fost aprobată.`,
+      technical_details: `Operatorul va emite token-ul în câteva secunde.`,
+      component: 'JIT_OPERATOR',
+      trace_id: Math.random().toString(36).substring(2),
+      action_required: '',
+      type: 'warning'
+    })
+  } catch (err) {
+    console.error('Approve failed', err)
+  }
+}
 
 async function fetchJitSessions() {
   isLoadingSessions.value = true
@@ -84,7 +163,7 @@ async function fetchJitSessions() {
     const s = jitStore.sessions
     jitSessionStats.value = {
       total_sessions: s.length,
-      pending: s.filter(x => x.status === 'PENDING').length,
+      pending: s.filter(x => x.status === 'PENDING' || x.status === 'PENDING_APPROVAL').length,
       active: s.filter(x => x.status === 'ACTIVE' || x.status === 'APPROVED').length,
       expired: s.filter(x => x.status === 'EXPIRED' || x.status === 'REVOKED').length,
     }
@@ -92,6 +171,7 @@ async function fetchJitSessions() {
       session_id: sess.id,
       user_email: sess.user,
       app_name: sess.namespace,
+      namespace: sess.namespace,
       state: sess.status,
       requested_at: sess.expiresAt,
     }))
@@ -99,44 +179,6 @@ async function fetchJitSessions() {
     console.error('Failed to fetch JIT sessions', err)
   } finally {
     isLoadingSessions.value = false
-  }
-}
-
-async function approveJitSession(_sessionId: string) {
-  // K8s JIT sessions are approved automatically by the operator — no manual approval needed.
-  notifyStore.addAlert({
-    error_code: 'SESSION_AUTO_APPROVED',
-    message: 'Sesiunile K8s JIT sunt aprobate automat de operator.',
-    technical_details: 'Operatorul emite tokenul imediat ce cererea este acceptată de engine-ul anti-abuse.',
-    component: 'JIT_MODULE',
-    trace_id: Math.random().toString(36).substring(2),
-    action_required: '',
-    type: 'warning'
-  })
-}
-
-async function revokeJitSessionExplicit(sessionId: string) {
-  isRevoking.value = true
-  try {
-    const sess = jitStore.sessions.find(s => s.id === sessionId)
-    if (sess) {
-      await jitStore.revokeSession(sess.namespace, sess.id)
-    }
-    notifyStore.addAlert({
-      error_code: 'SESSION_REVOKED',
-      message: `Sesiunea ${sessionId} a fost revocată.`,
-      technical_details: `RoleBinding-ul a fost șters din cluster.`,
-      component: 'JIT_MODULE',
-      trace_id: Math.random().toString(36).substring(2),
-      action_required: '',
-      type: 'error'
-    })
-    await fetchJitSessions()
-  } catch (err) {
-    console.error('Failed to revoke session', err)
-  } finally {
-    isRevoking.value = false
-    isConfirmRevokeOpen.value = false
   }
 }
 
@@ -167,6 +209,7 @@ async function fetchK8sNamespaces() {
 onMounted(() => {
   fetchJitSessions()
   fetchK8sNamespaces()
+  startEventStream()
   if (canReadAll.value) {
     loadJitAdmin().catch(() => undefined)
   }
@@ -181,23 +224,8 @@ onMounted(() => {
 
 onUnmounted(() => {
   clearInterval(timerId)
+  stopEventStream()
 })
-
-async function pollUntilActive(targetNamespace: string, maxWaitMs = 30000) {
-  const interval = 2000
-  const deadline = Date.now() + maxWaitMs
-  while (Date.now() < deadline) {
-    await new Promise((r) => setTimeout(r, interval))
-    await fetchJitSessions()
-    const active = jitStore.sessions.find(
-      (s) => s.namespace === targetNamespace && s.tokenIssued && s.commandToUse
-    )
-    if (active) {
-      generatedCommand.value = active.commandToUse!
-      return
-    }
-  }
-}
 
 async function submitRequest() {
   try {
@@ -207,20 +235,18 @@ async function submitRequest() {
       duration: form.value.duration
     })
     await dashboardStore.fetchOverview()
-    await fetchJitSessions()
     if (canReadAll.value) {
       await loadJitAdmin().catch(() => undefined)
     }
-    generatedCommand.value = `# Waiting for operator... (~2s)`
+    generatedCommand.value = '# Awaiting platform approval...'
     activeTab.value = 'sessions'
-    pollUntilActive(form.value.namespace)
     notifyStore.addAlert({
-        error_code: 'JIT_CREATED',
-        message: 'JIT Access request trimis cu succes.',
+        error_code: 'JIT_PENDING_APPROVAL',
+        message: 'Cererea JIT este în așteptarea aprobării.',
         technical_details: `Rolul ${form.value.role} în ns ${form.value.namespace} pentru ${form.value.duration} minute. ${form.value.reason || 'Fără justificare adițională.'}`,
         component: 'JIT_OPERATOR',
         trace_id: Math.random().toString(36).substring(2),
-        action_required: 'Operatorul procesează cererea. Tokenul va apărea automat în ~2 secunde.',
+        action_required: 'Un platform-engineer trebuie să aprobe cererea. Vei vedea tokenul aici real-time.',
         type: 'warning'
     })
   } catch (err) {
@@ -315,6 +341,7 @@ function getStatusColor(status: string) {
   if (status === 'EXPIRED') return 'secondary'
   if (status === 'REVOKED') return 'error'
   if (status.startsWith('DENIED') || status.startsWith('BLOCKED')) return 'error'
+  if (status === 'PENDING_APPROVAL') return 'orange'
   if (status === 'PENDING') return 'warning'
   return 'secondary'
 }
@@ -324,6 +351,7 @@ function getStatusIcon(status: string) {
   if (status === 'EXPIRED') return 'mdi-progress-clock'
   if (status === 'REVOKED') return 'mdi-cancel'
   if (status.startsWith('DENIED') || status.startsWith('BLOCKED')) return 'mdi-alert'
+  if (status === 'PENDING_APPROVAL') return 'mdi-account-clock'
   if (status === 'PENDING') return 'mdi-dots-horizontal-circle'
   return 'mdi-help-circle'
 }
@@ -606,18 +634,25 @@ async function savePolicies() {
                         <div class="flex-grow-1">
                           <div class="text-body-2 font-weight-medium">{{ session.user_email }}</div>
                           <div class="text-caption text-secondary">ns: {{ session.app_name }} • {{ session.state }}</div>
-                          <div class="text-caption text-secondary mt-1">Expiră: {{ session.requested_at ? new Date(session.requested_at).toLocaleString() : '—' }}</div>
+                          <div class="text-caption text-secondary mt-1">
+                            <template v-if="session.state === 'ACTIVE' || session.state === 'APPROVED'">Expiră: {{ session.requested_at ? new Date(session.requested_at).toLocaleString() : '—' }}</template>
+                            <template v-else-if="session.state === 'PENDING_APPROVAL'">În așteptarea aprobării de la platform-engineer</template>
+                            <template v-else>{{ session.state }}</template>
+                          </div>
                         </div>
                         <div class="text-right">
                           <v-chip
-                            :color="session.state === 'PENDING' ? 'warning' : (session.state === 'ACTIVE' || session.state === 'APPROVED') ? 'success' : 'error'"
+                            :color="getStatusColor(session.state)"
                             size="small" variant="flat" class="mb-2"
                           >
                             {{ session.state }}
                           </v-chip>
-                          <div v-if="session.state === 'ACTIVE' || session.state === 'APPROVED'" class="d-flex gap-1">
-                            <v-btn v-if="canRevoke" size="x-small" variant="flat" color="error" @click="revokeJitSessionExplicit(session.session_id)">
-                              Revoke
+                          <div class="d-flex gap-1 justify-end">
+                            <v-btn v-if="session.state === 'PENDING_APPROVAL' && canApprove" size="x-small" variant="flat" color="success" prepend-icon="mdi-check-bold" @click="approveSession(session)">
+                              Approve
+                            </v-btn>
+                            <v-btn v-if="canRevoke && (session.state === 'ACTIVE' || session.state === 'APPROVED' || session.state === 'PENDING_APPROVAL')" size="x-small" variant="flat" color="error" @click="jitStore.revokeSession(session.namespace, session.session_id)">
+                              {{ session.state === 'PENDING_APPROVAL' ? 'Cancel' : 'Revoke' }}
                             </v-btn>
                           </div>
                         </div>
@@ -701,17 +736,21 @@ async function savePolicies() {
                     </v-chip>
                   </td>
                   <td class="text-center font-mono text-caption">
-                    <template v-if="session.status === 'ACTIVE' || session.status === 'APPROVED' || session.status === 'PENDING'">
+                    <template v-if="(session.status === 'ACTIVE' || session.status === 'APPROVED') && session.expiresAt">
                       <div class="d-flex flex-column align-center w-100">
                         <span class="mb-1" :class="getTTLColorClass(session.expiresAt)">{{ formatTimeLeft(session.expiresAt) }}</span>
-                        <v-progress-linear 
-                          :model-value="getTTLPercentage(session.expiresAt, session.duration)" 
-                          :color="getTTLColor(session.expiresAt)" 
-                          height="4" 
+                        <v-progress-linear
+                          :model-value="getTTLPercentage(session.expiresAt, session.duration)"
+                          :color="getTTLColor(session.expiresAt)"
+                          height="4"
                           rounded="pill"
                           class="w-100"
                         ></v-progress-linear>
                       </div>
+                    </template>
+                    <template v-else-if="session.status === 'PENDING_APPROVAL'">
+                      <span class="text-warning">awaiting approval</span>
+                      <v-progress-linear indeterminate color="warning" height="4" rounded="pill" class="w-100 mt-1"></v-progress-linear>
                     </template>
                     <template v-else>
                       <span class="text-secondary">00:00:00</span>
@@ -720,12 +759,21 @@ async function savePolicies() {
                   </td>
                   <td class="text-caption text-secondary" style="max-width: 220px;">{{ session.message || 'No operator message available.' }}</td>
                   <td class="text-right">
-                    <v-btn 
-                      v-if="session.status === 'ACTIVE' || session.status === 'APPROVED' || session.status === 'PENDING'"
+                    <v-btn
+                      v-if="session.status === 'PENDING_APPROVAL' && canApprove"
+                      @click="approveSession({ session_id: session.id, namespace: session.namespace })"
+                      color="success"
+                      size="small"
+                      variant="flat"
+                      prepend-icon="mdi-check-bold"
+                      class="mr-1"
+                    >Approve</v-btn>
+                    <v-btn
+                      v-if="session.status === 'ACTIVE' || session.status === 'APPROVED' || session.status === 'PENDING' || session.status === 'PENDING_APPROVAL'"
                       @click="promptRevoke(session)"
-                      color="error" 
-                      size="small" 
-                      variant="text" 
+                      color="error"
+                      size="small"
+                      variant="text"
                       icon="mdi-lock-reset"
                       title="Kill Switch (Revoke)"
                     ></v-btn>

@@ -8,7 +8,7 @@ export interface JitSession {
   role: string;
   duration: number;
   expiresAt: string;
-  status: 'ACTIVE' | 'APPROVED' | 'EXPIRED' | 'REVOKED' | 'PENDING' | 'DENIED' | 'TAMPERED';
+  status: 'ACTIVE' | 'APPROVED' | 'EXPIRED' | 'REVOKED' | 'PENDING' | 'PENDING_APPROVAL' | 'DENIED' | 'TAMPERED';
   message?: string;
   sessionId?: string;
   temporaryToken?: string;
@@ -62,11 +62,23 @@ export const useJitStore = defineStore('jit', {
     async revokeSession(namespace: string, name: string) {
       try {
         await api.delete(`/jit/revoke/${namespace}/${name}`);
-        await this.fetchSessions();
       } catch (error) {
         console.error('Revoke failed', error);
         throw error;
       }
+    },
+
+    async approveSession(namespace: string, name: string) {
+      try {
+        await api.post(`/jit/request/${namespace}/${name}/approve`);
+      } catch (error) {
+        console.error('Approve failed', error);
+        throw error;
+      }
+    },
+
+    applySnapshot(raw: any[]) {
+      this.sessions = (raw || []).map(mapSession);
     }
   }
 })
@@ -100,6 +112,7 @@ function normalizeStatus(value: string | undefined): JitSession['status'] {
   const state = String(value || 'PENDING').toUpperCase()
   if (state === 'RUNNING' || state === 'ACTIVE') return 'ACTIVE'
   if (state === 'APPROVED') return 'APPROVED'
+  if (state === 'PENDING_APPROVAL') return 'PENDING_APPROVAL'
   if (state === 'EXPIRED') return 'EXPIRED'
   if (state === 'REVOKED' || state === 'TAMPERED') return 'REVOKED'
   if (state.startsWith('DENIED') || state.startsWith('BLOCKED')) return 'DENIED'

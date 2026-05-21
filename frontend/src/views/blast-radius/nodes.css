@@ -1,0 +1,57 @@
+/*
+ * Shared node styles for the Blast Radius topology.
+ * Imported once at the canvas level so all node components share the same
+ * card aesthetic without each Vue component carrying its own copy.
+ */
+
+.br-node {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgb(var(--v-theme-surface));
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.18);
+  font-family: 'Inter', system-ui, sans-serif;
+  cursor: pointer;
+  transition: transform 0.12s ease, box-shadow 0.12s ease, opacity 0.18s ease;
+}
+
+.br-node:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.28);
+}
+
+.br-node__icon { flex: 0 0 auto; }
+.br-node__body { flex: 1 1 auto; min-width: 0; }
+
+.br-node__title {
+  font-size: 0.88rem;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.br-node__meta {
+  font-size: 0.75rem;
+  color: rgba(var(--v-theme-on-surface), 0.7);
+  margin-top: 2px;
+}
+
+.br-node--critical { border-color: rgba(239, 83, 80, 0.55); }
+.br-node--exempted { border-color: rgba(102, 187, 106, 0.55); }
+.br-node--latent   { border-color: rgba(158, 158, 158, 0.4); opacity: 0.85; }
+
+/* Path highlight: dim non-active nodes/edges when something is hovered. */
+.br-graph--has-hover .vue-flow__node:not(.br-node--active),
+.br-graph--has-hover .vue-flow__edge:not(.br-edge--active) {
+  opacity: 0.18;
+}
+.br-graph--has-hover .vue-flow__node.br-node--active,
+.br-graph--has-hover .vue-flow__edge.br-edge--active {
+  opacity: 1;
+}
+
+.text-mono { font-family: 'JetBrains Mono', 'Fira Code', monospace; font-size: 0.85rem; }

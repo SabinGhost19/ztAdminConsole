@@ -9,34 +9,15 @@
  * Output: a native tree (no iframe) the auditor can read at a glance,
  *         coloured red for affected / green for VEX-exempted.
  */
-import { reactive, ref } from 'vue'
+import { computed, reactive, ref } from 'vue'
 import { api } from '../api/axios'
-
-interface DeploymentEntry {
-  namespace?: string
-  name?: string
-  trustLevel?: string
-  securityState?: string
-  vexExempted?: boolean
-}
-
-interface AffectedImage {
-  image: string
-  deployments: DeploymentEntry[]
-}
-
-interface VulnerablePackage {
-  name: string
-  version: string
-  affectedImages: AffectedImage[]
-}
-
-interface BlastRadiusResponse {
-  cve: string
-  vulnerablePackages: VulnerablePackage[]
-  error?: string
-  guacUnavailable?: boolean
-}
+import BlastRadiusTopology from './blast-radius/BlastRadiusTopology.vue'
+import BlastRadiusInspector from './blast-radius/BlastRadiusInspector.vue'
+import type {
+  BlastNodeData,
+  BlastRadiusResponse,
+  VulnerablePackage,
+} from './blast-radius/types'
 
 const state = reactive({
   cve: '',
@@ -44,6 +25,21 @@ const state = reactive({
   data: null as BlastRadiusResponse | null,
   errorMessage: '',
 })
+
+// "Only in-cluster" filter — default ON so the auditor sees the actionable
+// signal first (packages with live deployments). Toggle OFF reveals the
+// graph-only packages too.
+const onlyInCluster = ref(true)
+
+function packageIsInCluster(pkg: VulnerablePackage): boolean {
+  return (pkg.affectedImages ?? []).some(img => (img.deployments?.length ?? 0) > 0)
+}
+
+// Header counters — filtering itself happens inside the topology component.
+const totalPackages = computed(() => state.data?.vulnerablePackages?.length ?? 0)
+const inClusterCount = computed(
+  () => (state.data?.vulnerablePackages ?? []).filter(packageIsInCluster).length,
+)
 
 const guacHealth = ref<{ reachable: boolean; endpoint?: string; reason?: string } | null>(null)
 
@@ -80,18 +76,14 @@ async function runQuery() {
   }
 }
 
-function deploymentColor(dep: DeploymentEntry) {
-  if (dep.vexExempted) return 'success'
-  return 'error'
-}
-
-function deploymentIcon(dep: DeploymentEntry) {
-  return dep.vexExempted ? 'mdi-shield-check' : 'mdi-alert-octagon'
-}
-
-function deploymentLabel(dep: DeploymentEntry) {
-  if (dep.vexExempted) return 'Exempted via VEX'
-  return 'Action required'
+// Inspector (right-side drawer) state. The topology component emits the
+// `data` payload of the clicked node — we just keep a copy and toggle the
+// drawer open.
+const inspectorOpen = ref(false)
+const inspectorSelected = ref<BlastNodeData | null>(null)
+function onNodeSelected(data: BlastNodeData) {
+  inspectorSelected.value = data
+  inspectorOpen.value = true
 }
 
 probeGuac()
@@ -140,6 +132,19 @@ probeGuac()
           Simulate Blast Radius
         </v-btn>
       </v-card-text>
+      <v-card-text class="py-2 d-flex align-center">
+        <v-switch
+          v-model="onlyInCluster"
+          label="Doar pachete care rulează în cluster"
+          color="primary"
+          density="compact"
+          hide-details
+        />
+        <v-spacer />
+        <span v-if="state.data && totalPackages" class="text-medium-emphasis text-caption">
+          {{ inClusterCount }} în cluster / {{ totalPackages }} total în graf
+        </span>
+      </v-card-text>
     </v-card>
 
     <v-alert v-if="state.errorMessage" type="error" class="mb-4" variant="tonal" closable @click:close="state.errorMessage = ''">
@@ -153,78 +158,18 @@ probeGuac()
       <code>GUAC_GRAPHQL_URL</code> în deployment-ul backend-ului.
     </v-alert>
 
-    <v-card v-if="state.data && state.data.vulnerablePackages?.length" variant="flat" class="gc-border" style="border: 1px solid rgba(var(--v-theme-on-surface), 0.12)">
-      <v-card-title class="d-flex align-center ga-2">
-        <v-icon color="error">mdi-alert-circle</v-icon>
-        <span>{{ state.data.cve }} — {{ state.data.vulnerablePackages.length }} vulnerable package(s)</span>
-      </v-card-title>
-      <v-card-text>
-        <v-expansion-panels variant="accordion" multiple>
-          <v-expansion-panel
-            v-for="pkg in state.data.vulnerablePackages"
-            :key="pkg.name + ':' + pkg.version"
-          >
-            <v-expansion-panel-title>
-              <v-icon class="me-2" color="warning">mdi-package-variant</v-icon>
-              <span class="font-weight-medium">{{ pkg.name }}</span>
-              <span class="ms-2 text-medium-emphasis">v{{ pkg.version || '?' }}</span>
-              <v-spacer />
-              <v-chip size="x-small" variant="tonal">
-                {{ pkg.affectedImages?.length || 0 }} affected image(s)
-              </v-chip>
-            </v-expansion-panel-title>
-            <v-expansion-panel-text>
-              <v-list density="compact">
-                <template v-for="img in pkg.affectedImages" :key="img.image">
-                  <v-list-subheader>
-                    <v-icon class="me-1" size="small">mdi-docker</v-icon>
-                    <span class="text-mono">{{ img.image }}</span>
-                  </v-list-subheader>
-                  <v-list-item
-                    v-for="dep in img.deployments"
-                    :key="(dep.namespace || '') + '/' + (dep.name || '')"
-                  >
-                    <template #prepend>
-                      <v-avatar :color="deploymentColor(dep)" size="24">
-                        <v-icon size="14">{{ deploymentIcon(dep) }}</v-icon>
-                      </v-avatar>
-                    </template>
-                    <v-list-item-title class="d-flex align-center ga-2">
-                      <span>{{ dep.namespace }} / {{ dep.name }}</span>
-                      <v-chip :color="deploymentColor(dep)" size="x-small" variant="tonal">
-                        {{ deploymentLabel(dep) }}
-                      </v-chip>
-                      <v-chip v-if="dep.trustLevel" size="x-small" variant="outlined">
-                        trust={{ dep.trustLevel }}
-                      </v-chip>
-                    </v-list-item-title>
-                  </v-list-item>
-                  <v-list-item v-if="!img.deployments?.length">
-                    <v-list-item-subtitle class="text-medium-emphasis">
-                      Imaginea este în GUAC, dar nu rulează în niciun namespace urmărit de ZTA.
-                    </v-list-item-subtitle>
-                  </v-list-item>
-                </template>
-                <v-list-item v-if="!pkg.affectedImages?.length">
-                  <v-list-item-subtitle class="text-medium-emphasis">
-                    Niciun deployment afectat — pachet vulnerabil identificat în GUAC, dar nicio imagine activă nu îl conține.
-                  </v-list-item-subtitle>
-                </v-list-item>
-              </v-list>
-            </v-expansion-panel-text>
-          </v-expansion-panel>
-        </v-expansion-panels>
-      </v-card-text>
-    </v-card>
+    <BlastRadiusTopology
+      v-if="state.data"
+      :response="state.data"
+      :only-in-cluster="onlyInCluster"
+      @node-selected="onNodeSelected"
+      @disable-filter="onlyInCluster = false"
+    />
 
-    <v-alert
-      v-else-if="state.data && !state.data.vulnerablePackages?.length"
-      type="success"
-      variant="tonal"
-      class="mt-4"
-    >
-      Niciun pachet din graful GUAC nu este afectat de {{ state.data.cve }}.
-    </v-alert>
+    <BlastRadiusInspector
+      v-model="inspectorOpen"
+      :selected="inspectorSelected"
+    />
   </v-container>
 </template>
 

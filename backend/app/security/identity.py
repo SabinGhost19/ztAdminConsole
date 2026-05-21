@@ -315,11 +315,15 @@ def reload_auth_config() -> AuthConfig:
 
 def _extract_token(request: Request) -> str:
     auth = request.headers.get("Authorization") or request.headers.get("authorization")
-    if not auth:
-        return ""
-    parts = auth.split()
-    if len(parts) == 2 and parts[0].lower() == "bearer":
-        return parts[1]
+    if auth:
+        parts = auth.split()
+        if len(parts) == 2 and parts[0].lower() == "bearer":
+            return parts[1]
+    # SSE/EventSource fallback: token may be passed as query param because the
+    # browser EventSource API does not support custom headers.
+    qp_token = request.query_params.get("access_token")
+    if qp_token:
+        return qp_token
     return ""
 
 

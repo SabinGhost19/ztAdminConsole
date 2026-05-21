@@ -33,6 +33,14 @@ async def blast_radius(
     """Run a Blast Radius query against GUAC and return a tree-shaped JSON
     ready to be rendered by the Vue Tree View component.
 
+    With `enrich_cluster=true` (default), each vulnerable package gets its
+    `affectedImages` populated by traversing GUAC's `IsDependency` graph —
+    only OCI images whose SBOM declares the vulnerable package land there.
+    The frontend uses an `affectedImages.deployments.length > 0` test as
+    the "in cluster" signal for the toggle filter, so the response always
+    carries the full package list (filtering happens client-side to keep
+    the M/N counter honest).
+
     Errors are surfaced softly: the response always contains
     `vulnerablePackages` (possibly empty) plus an `error` or
     `guacUnavailable` flag so the UI can render a friendly empty state.

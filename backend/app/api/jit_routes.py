@@ -1,7 +1,14 @@
+import asyncio
+import json
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException, Request
-from typing import Any, Dict, List
+from fastapi.responses import StreamingResponse
+from typing import Any, AsyncIterator, Dict, List
 
 from pydantic import BaseModel, Field
+
+logger = logging.getLogger("zero_trust_jit_routes")
 
 from app.services import jit_service
 from app.services.jit_admin_service import get_jit_analytics, get_jit_policies, update_jit_policies
@@ -30,6 +37,20 @@ class JitPoliciesIn(BaseModel):
     blockedUsers: list[str] = Field(default_factory=list)
     antiAbuse: AntiAbuseIn = Field(default_factory=AntiAbuseIn)
 
+def _owner_of(item: Dict[str, Any]) -> str:
+    summary = item.get("summary", {}) or {}
+    return str(summary.get("developerId") or "").strip().lower()
+
+
+def _filter_user_visible(items: List[Dict[str, Any]], email: str) -> List[Dict[str, Any]]:
+    """Hide orphan entries (unknown owner) and sessions that don't belong to this user."""
+    scoped = (email or "").strip().lower()
+    return [
+        item for item in items
+        if _owner_of(item) and _owner_of(item) != "unknown" and _owner_of(item) == scoped
+    ]
+
+
 @router.get("/sessions", response_model=List[Dict[str, Any]])
 async def get_all_jit_requests(
     request: Request,
@@ -37,10 +58,7 @@ async def get_all_jit_requests(
 ):
     items = await jit_service.list_jit_requests()
     if perm.P_JIT_READ not in identity.permissions:
-        items = [
-            item for item in items
-            if (item.get("summary", {}) or {}).get("developerId") == identity.email
-        ]
+        items = _filter_user_visible(items, identity.email or "")
     return items
 
 
@@ -51,10 +69,7 @@ async def get_my_jit_requests(
 ):
     """Return only the JIT requests that belong to the calling user."""
     all_items = await jit_service.list_jit_requests()
-    return [
-        item for item in all_items
-        if item.get("summary", {}).get("developerId") == identity.email
-    ]
+    return _filter_user_visible(all_items, identity.email or "")
 
 
 @router.get("/analytics", response_model=Dict[str, Any])
@@ -100,9 +115,22 @@ async def create_jit_session(
         name=name,
         user_email=user_label,
         duration=data.duration,
-        role=data.role
+        role=data.role,
+        requires_approval=True,
     )
     return res
+
+
+@router.post("/request/{namespace}/{name}/approve", response_model=Dict[str, Any])
+async def approve_jit_request_endpoint(
+    namespace: str,
+    name: str,
+    identity: Identity = Depends(require_permission(perm.P_JIT_APPROVE)),
+) -> Dict[str, Any]:
+    """Approve a PENDING_APPROVAL JIT CRD. The operator picks up the status change and provisions the token."""
+    approver = identity.email or identity.preferred_username or identity.subject or "unknown"
+    payload = await jit_service.approve_jit_request(namespace=namespace, name=name, approver_email=approver)
+    return {"status": "success", "approvedBy": approver, "request": payload.get("metadata", {}).get("name")}
 
 
 @router.get("/request/{namespace}/{name}", response_model=Dict[str, Any])
@@ -416,3 +444,63 @@ async def get_jit_sessions_stats(
     from app.services.jit_state_service import get_session_stats
     stats = get_session_stats()
     return {"status": "success", "stats": stats}
+
+# --- Phase 6: Real-time SSE stream of JIT CRD changes ---
+
+async def _jit_event_stream(identity: Identity) -> AsyncIterator[str]:
+    """Polls /jit/sessions every 2s, emits SSE event when the visible snapshot changes."""
+    last_snapshot: str | None = None
+    keepalive_ticks = 0
+    try:
+        while True:
+            try:
+                items = await jit_service.list_jit_requests()
+                if perm.P_JIT_READ not in identity.permissions:
+                    items = _filter_user_visible(items, identity.email or "")
+                # Compact fingerprint per session — name+state+tokenIssued+expiresAt+approved
+                fingerprint = [
+                    {
+                        "name": (i.get("metadata", {}) or {}).get("name"),
+                        "namespace": (i.get("metadata", {}) or {}).get("namespace"),
+                        "state": (i.get("summary", {}) or {}).get("state"),
+                        "tokenIssued": (i.get("summary", {}) or {}).get("tokenIssued"),
+                        "expiresAt": (i.get("summary", {}) or {}).get("expiresAt"),
+                        "approved": ((i.get("status", {}) or {}).get("approved")),
+                    }
+                    for i in items
+                ]
+                snapshot = json.dumps(fingerprint, sort_keys=True)
+                if snapshot != last_snapshot:
+                    last_snapshot = snapshot
+                    yield f"event: jit.snapshot\ndata: {json.dumps(items)}\n\n"
+                    keepalive_ticks = 0
+                else:
+                    keepalive_ticks += 1
+                    if keepalive_ticks >= 15:  # ~30s heartbeat
+                        yield ": keepalive\n\n"
+                        keepalive_ticks = 0
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                logger.warning("SSE stream tick failed: %s", exc)
+                yield f"event: jit.error\ndata: {json.dumps({'message': str(exc)})}\n\n"
+            await asyncio.sleep(2)
+    except asyncio.CancelledError:
+        logger.info("SSE stream cancelled for %s", identity.email)
+        return
+
+
+@router.get("/stream")
+async def stream_jit_events(
+    identity: Identity = Depends(require_any_permission(perm.P_JIT_READ, perm.P_JIT_READ_LIMITED, perm.P_JIT_READ_OWN)),
+) -> StreamingResponse:
+    """Server-Sent Events stream of JIT request changes, scoped to the caller's permissions."""
+    return StreamingResponse(
+        _jit_event_stream(identity),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )

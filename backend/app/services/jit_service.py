@@ -1,9 +1,11 @@
 import logging
+from datetime import datetime, timezone
 
 from kubernetes_asyncio import client
 
+from app.core.k8s import get_custom_api
 from app.middleware.errors import ZeroTrustException
-from app.services.k8s_scanner import JIT_PLURAL, scanner
+from app.services.k8s_scanner import GROUP, VERSION, JIT_PLURAL, scanner
 from app.services.serializers import serialize_jit_request
 
 logger = logging.getLogger("zero_trust_jit_service")
@@ -19,10 +21,10 @@ async def list_jit_requests(namespace: str = "") -> list:
         logger.warning("JIT CRD unavailable, returning empty list: %s", e, extra={"details": {"namespace": namespace or None}})
         return []
 
-async def create_jit_request(namespace: str, name: str, user_email: str, duration: int, role: str) -> dict:
+async def create_jit_request(namespace: str, name: str, user_email: str, duration: int, role: str, requires_approval: bool = True) -> dict:
     logger.info(
         "Creating JIT request",
-        extra={"details": {"namespace": namespace, "name": name, "user": user_email, "duration": duration, "role": role}},
+        extra={"details": {"namespace": namespace, "name": name, "user": user_email, "duration": duration, "role": role, "requiresApproval": requires_approval}},
     )
     manifest = {
         "apiVersion": "devsecops.licenta.ro/v1",
@@ -39,7 +41,8 @@ async def create_jit_request(namespace: str, name: str, user_email: str, duratio
             "targetNamespace": namespace,
             "requestedRole": role,
             "duration": f"{duration}m",
-            "reason": f"Requested via UI by {user_email}"
+            "reason": f"Requested via UI by {user_email}",
+            "requiresApproval": requires_approval,
         }
     }
     payload = await scanner.create_custom_resource(
@@ -49,6 +52,41 @@ async def create_jit_request(namespace: str, name: str, user_email: str, duratio
     )
     logger.info("Created JIT request successfully", extra={"details": {"namespace": namespace, "name": name, "user": user_email}})
     return payload
+
+async def approve_jit_request(namespace: str, name: str, approver_email: str) -> dict:
+    """Patches the JIT CRD status subresource to mark it approved.
+    The operator watches status.approved and provisions the active session."""
+    logger.info("Approving JIT request", extra={"details": {"namespace": namespace, "name": name, "approver": approver_email}})
+    api = get_custom_api()
+    body = {
+        "status": {
+            "approved": True,
+            "approvedBy": approver_email,
+            "approvedAt": datetime.now(timezone.utc).isoformat(),
+        }
+    }
+    try:
+        payload = await api.patch_namespaced_custom_object_status(
+            group=GROUP,
+            version=VERSION,
+            namespace=namespace,
+            plural=JIT_PLURAL,
+            name=name,
+            body=body,
+        )
+        return payload
+    except client.exceptions.ApiException as e:
+        logger.exception("Failed approving JIT request", extra={"details": {"namespace": namespace, "name": name, "status": e.status}})
+        if e.status == 404:
+            raise ZeroTrustException(
+                error_code="JIT_NOT_FOUND",
+                message="Cererea JIT nu a putut fi găsită pentru aprobare.",
+                technical_details=f"JITRequest {name} în {namespace} nu există.",
+                component="JIT_OPERATOR",
+                action_required="Reîncărcați tabelul.",
+            )
+        raise
+
 
 async def revoke_jit_access(namespace: str, name: str):
     """
