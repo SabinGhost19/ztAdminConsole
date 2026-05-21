@@ -1,3 +1,10 @@
+## [1.10.4](https://github.com/SabinGhost19/ztAdminConsole/compare/v1.10.3...v1.10.4) (2026-05-21)
+
+
+### Bug Fixes
+
+* **dashboard:** correct GUAC blast-radius query and accept GHSA / debian-cve IDs ([93144ca](https://github.com/SabinGhost19/ztAdminConsole/commit/93144ca27de4d109b2ba3bf00963de00ca5424b4))
+
 ## [1.10.3](https://github.com/SabinGhost19/ztAdminConsole/compare/v1.10.2...v1.10.3) (2026-05-20)
 
 
