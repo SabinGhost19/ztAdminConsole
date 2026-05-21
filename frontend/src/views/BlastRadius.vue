@@ -57,15 +57,19 @@ async function probeGuac() {
 }
 
 async function runQuery() {
-  if (!state.cve.trim().toUpperCase().startsWith('CVE-')) {
-    state.errorMessage = 'Introdu un CVE valid (ex: CVE-2024-1234).'
+  const raw = state.cve.trim()
+  // GUAC stores identifiers in three shapes coming from osv-certifier:
+  // "cve-2024-1234", "ghsa-xxxx-xxxx-xxxx", "debian-cve-2024-1234".
+  // Accept any of these (case-insensitive); GUAC normalises to lowercase.
+  if (!/^(cve|ghsa|debian-cve|osv|rhsa|alas|gms)-/i.test(raw)) {
+    state.errorMessage = 'Introdu un identificator valid (CVE-…, GHSA-…, debian-cve-…).'
     return
   }
   state.errorMessage = ''
   state.loading = true
   try {
     const { data } = await api.get<BlastRadiusResponse>('/guac/blast-radius', {
-      params: { cve: state.cve.trim().toUpperCase(), enrich_cluster: true },
+      params: { cve: raw.toLowerCase(), enrich_cluster: true },
     })
     state.data = data
   } catch (err: any) {
@@ -119,8 +123,8 @@ probeGuac()
       <v-card-text class="d-flex align-center ga-3">
         <v-text-field
           v-model="state.cve"
-          label="CVE Identifier"
-          placeholder="CVE-2024-1234"
+          label="Vulnerability Identifier"
+          placeholder="CVE-…, GHSA-…, debian-cve-…"
           variant="outlined"
           density="comfortable"
           hide-details

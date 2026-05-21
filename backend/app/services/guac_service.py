@@ -80,21 +80,25 @@ async def blast_radius_by_cve(cve_id: str) -> dict[str, Any]:
     if not url:
         return {"cve": cve_id, "vulnerablePackages": [], "guacUnavailable": True}
 
-    # GUAC query — keep it deliberately simple and tolerant. The exact
-    # schema varies between GUAC releases; the proxy normalises whatever
-    # we get back so the UI can render even partial data.
+    # GUAC v1.x exposes the join through `CertifyVuln(certifyVulnSpec: ...)`
+    # filtered by vulnerabilityID. Earlier drafts of this proxy used a
+    # non-existent `findVulnerability` field which returned HTTP 422.
+    # IDs in the graph come in three flavors (osv-certifier output):
+    #   - "ghsa-xxxx-xxxx-xxxx"
+    #   - "cve-2024-xxxx"
+    #   - "debian-cve-2024-xxxx"
+    # GUAC stores them lowercased, so normalise before querying.
     query = """
     query BlastRadius($cve: String!) {
-      findVulnerability(input: { vulnerability: { vulnerabilityID: $cve } }) {
-        __typename
-        ... on CertifyVuln {
-          vulnerability { vulnerabilityIDs { vulnerabilityID } }
-          package {
-            namespaces {
-              names {
-                name
-                versions { version qualifiers { key value } }
-              }
+      CertifyVuln(certifyVulnSpec: { vulnerability: { vulnerabilityID: $cve } }) {
+        vulnerability { vulnerabilityIDs { vulnerabilityID } }
+        package {
+          type
+          namespaces {
+            namespace
+            names {
+              name
+              versions { version qualifiers { key value } }
             }
           }
         }
@@ -104,14 +108,23 @@ async def blast_radius_by_cve(cve_id: str) -> dict[str, Any]:
 
     try:
         async with httpx.AsyncClient(timeout=8.0) as client:
-            resp = await client.post(url, json={"query": query, "variables": {"cve": cve_id}})
+            resp = await client.post(
+                url,
+                json={"query": query, "variables": {"cve": cve_id.lower()}},
+            )
         if resp.status_code >= 400:
             logger.warning(
                 "GUAC returned non-2xx for blast-radius query",
-                extra={"details": {"cve": cve_id, "status": resp.status_code}},
+                extra={"details": {"cve": cve_id, "status": resp.status_code, "body": resp.text[:300]}},
             )
             return {"cve": cve_id, "vulnerablePackages": [], "error": f"GUAC HTTP {resp.status_code}"}
         body = resp.json()
+        if body.get("errors"):
+            logger.warning(
+                "GUAC returned GraphQL errors for blast-radius query",
+                extra={"details": {"cve": cve_id, "errors": str(body["errors"])[:300]}},
+            )
+            return {"cve": cve_id, "vulnerablePackages": [], "error": str(body["errors"][0].get("message", "GUAC GraphQL error"))[:200]}
     except Exception as exc:
         logger.exception(
             "GUAC blast-radius query failed",
@@ -120,7 +133,7 @@ async def blast_radius_by_cve(cve_id: str) -> dict[str, Any]:
         return {"cve": cve_id, "vulnerablePackages": [], "error": str(exc)[:200]}
 
     # Normalise — GUAC payload shape is intentionally tolerant to schema drift.
-    findings = ((body.get("data") or {}).get("findVulnerability") or []) or []
+    findings = ((body.get("data") or {}).get("CertifyVuln") or []) or []
     by_package: dict[tuple[str, str], dict[str, Any]] = {}
     for entry in findings:
         pkg_ns = ((entry.get("package") or {}).get("namespaces") or []) or []
