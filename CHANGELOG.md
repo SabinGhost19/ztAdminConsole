@@ -1,3 +1,10 @@
+# [1.11.0](https://github.com/SabinGhost19/ztAdminConsole/compare/v1.10.5...v1.11.0) (2026-05-21)
+
+
+### Features
+
+* **rbac:** allow developer role limited read on JIT sessions/analytics/policies ([b26f6bc](https://github.com/SabinGhost19/ztAdminConsole/commit/b26f6bcc3b5a737d611148ec7ba8c42af5f07aec))
+
 ## [1.10.5](https://github.com/SabinGhost19/ztAdminConsole/compare/v1.10.4...v1.10.5) (2026-05-21)
 
 
