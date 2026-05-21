@@ -30,6 +30,7 @@ P_OVERVIEW_READ = "overview:read"
 P_JIT_REQUEST = "jit:request"
 P_JIT_READ = "jit:read"
 P_JIT_READ_OWN = "jit:read-own"
+P_JIT_READ_LIMITED = "jit:read-limited"
 P_JIT_APPROVE = "jit:approve"
 P_JIT_REVOKE = "jit:revoke"
 P_JIT_POLICY_WRITE = "jit:policy:write"
@@ -89,7 +90,7 @@ GROUP_TO_PERMISSIONS: Dict[str, FrozenSet[str]] = {
     }),
     "developer": frozenset({
         P_OVERVIEW_READ,
-        P_JIT_REQUEST, P_JIT_READ_OWN,
+        P_JIT_REQUEST, P_JIT_READ_OWN, P_JIT_READ_LIMITED,
         P_APPS_READ,
         P_SCA_READ,
     }),
@@ -129,7 +130,7 @@ __all__ = [
     "permissions_for",
     # individual permission constants exported for direct import in routes:
     "P_OVERVIEW_READ",
-    "P_JIT_REQUEST", "P_JIT_READ", "P_JIT_READ_OWN", "P_JIT_APPROVE", "P_JIT_REVOKE",
+    "P_JIT_REQUEST", "P_JIT_READ", "P_JIT_READ_OWN", "P_JIT_READ_LIMITED", "P_JIT_APPROVE", "P_JIT_REVOKE",
     "P_JIT_POLICY_WRITE",
     "P_IAM_READ", "P_IAM_WRITE",
     "P_APPS_READ", "P_APPS_WRITE",

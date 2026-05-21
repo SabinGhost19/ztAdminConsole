@@ -7,7 +7,7 @@ from app.services import jit_service
 from app.services.jit_admin_service import get_jit_analytics, get_jit_policies, update_jit_policies
 from app.services import k8s_jit_service
 from app.middleware.errors import ZeroTrustException
-from app.security.identity import current_user, require_permission, Identity
+from app.security.identity import current_user, require_permission, require_any_permission, Identity
 from app.security import permissions as perm
 
 router = APIRouter()
@@ -33,9 +33,14 @@ class JitPoliciesIn(BaseModel):
 @router.get("/sessions", response_model=List[Dict[str, Any]])
 async def get_all_jit_requests(
     request: Request,
-    _identity: Identity = Depends(require_permission(perm.P_JIT_READ)),
+    identity: Identity = Depends(require_any_permission(perm.P_JIT_READ, perm.P_JIT_READ_LIMITED)),
 ):
     items = await jit_service.list_jit_requests()
+    if perm.P_JIT_READ not in identity.permissions:
+        items = [
+            item for item in items
+            if (item.get("summary", {}) or {}).get("developerId") == identity.email
+        ]
     return items
 
 
@@ -54,14 +59,15 @@ async def get_my_jit_requests(
 
 @router.get("/analytics", response_model=Dict[str, Any])
 async def get_jit_anti_abuse_analytics(
-    _identity: Identity = Depends(require_permission(perm.P_JIT_READ)),
+    identity: Identity = Depends(require_any_permission(perm.P_JIT_READ, perm.P_JIT_READ_LIMITED)),
 ) -> Dict[str, Any]:
-    return await get_jit_analytics()
+    scope_email = None if perm.P_JIT_READ in identity.permissions else identity.email
+    return await get_jit_analytics(user_email=scope_email)
 
 
 @router.get("/policies", response_model=Dict[str, Any])
 async def get_jit_policy_config(
-    _identity: Identity = Depends(require_permission(perm.P_JIT_READ)),
+    _identity: Identity = Depends(require_any_permission(perm.P_JIT_READ, perm.P_JIT_READ_LIMITED)),
 ) -> Dict[str, Any]:
     return await get_jit_policies()
 

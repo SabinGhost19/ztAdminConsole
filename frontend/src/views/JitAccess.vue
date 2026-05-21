@@ -16,6 +16,7 @@ const canRevoke = computed(() => auth.can('jit:revoke'))
 const canRequest = computed(() => auth.can('jit:request'))
 const canWritePolicy = computed(() => auth.can('jit:policy:write'))
 const canReadAll = computed(() => auth.can('jit:read'))
+const canReadLimited = computed(() => auth.can('jit:read-limited'))
 
 const sessions = computed(() => jitStore.sessions)
 const isLoading = computed(() => jitStore.isLoading)
@@ -74,7 +75,7 @@ const now = ref(Date.now())
 async function fetchJitSessions() {
   isLoadingSessions.value = true
   try {
-    if (canReadAll.value) {
+    if (canReadAll.value || canReadLimited.value) {
       await jitStore.fetchSessions()
     } else {
       await jitStore.fetchMySessions()
@@ -206,7 +207,10 @@ async function submitRequest() {
       duration: form.value.duration
     })
     await dashboardStore.fetchOverview()
-    await loadJitAdmin()
+    await fetchJitSessions()
+    if (canReadAll.value) {
+      await loadJitAdmin().catch(() => undefined)
+    }
     generatedCommand.value = `# Waiting for operator... (~2s)`
     activeTab.value = 'sessions'
     pollUntilActive(form.value.namespace)

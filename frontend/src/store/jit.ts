@@ -39,7 +39,6 @@ export const useJitStore = defineStore('jit', {
       this.isSubmitting = true;
       try {
         await api.post('/jit/request', data);
-        await this.fetchSessions();
       } catch (error) {
         console.error('Request failed', error);
         throw error;

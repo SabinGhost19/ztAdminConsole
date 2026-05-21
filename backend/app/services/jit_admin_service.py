@@ -106,14 +106,21 @@ async def update_jit_policies(payload: dict[str, Any]) -> dict[str, Any]:
     return await get_jit_policies()
 
 
-async def get_jit_analytics() -> dict[str, Any]:
-    logger.info("Computing JIT analytics")
+async def get_jit_analytics(user_email: str | None = None) -> dict[str, Any]:
+    logger.info("Computing JIT analytics", extra={"details": {"scopedTo": user_email or "all"}})
     try:
         raw_items = await scanner.list_custom_resources(plural=JIT_PLURAL)
     except Exception as exc:
         logger.warning("Failed to list JIT requests for analytics (CRD unavailable?): %s", exc)
         raw_items = []
     items = [serialize_jit_request(item) for item in raw_items]
+    if user_email:
+        scoped = user_email.strip().lower()
+        def _owner(item: dict[str, Any]) -> str:
+            summary = item.get("summary", {}) or {}
+            owner = summary.get("developerId") or (item.get("metadata", {}) or {}).get("annotations", {}).get("jit.devsecops/user") or ""
+            return str(owner).strip().lower()
+        items = [item for item in items if _owner(item) == scoped]
     try:
         policies = await get_jit_policies()
     except Exception as exc:

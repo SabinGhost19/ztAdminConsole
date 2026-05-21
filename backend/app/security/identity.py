@@ -437,6 +437,34 @@ def require_permission(*permissions: str):
     return dependency
 
 
+def require_any_permission(*permissions: str):
+    """Allow access when the identity holds at least one of the listed permissions."""
+    accepted = frozenset(permissions)
+    if not accepted:
+        raise ValueError("require_any_permission: at least one permission required")
+
+    def dependency(identity: Identity = Depends(get_identity)) -> Identity:
+        if identity.is_bypass:
+            return identity
+        if accepted.isdisjoint(identity.permissions):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail={
+                    "error": "forbidden",
+                    "message": "Missing required permissions.",
+                    "user_groups": identity.groups,
+                    "user_permissions": sorted(identity.permissions),
+                    "required_any_of": sorted(accepted),
+                    "groups_granting_missing": {
+                        p: groups_granting(p) for p in sorted(accepted)
+                    },
+                },
+            )
+        return identity
+
+    return dependency
+
+
 __all__ = [
     "AuthConfig",
     "Identity",
@@ -445,6 +473,7 @@ __all__ = [
     "get_identity",
     "optional_identity",
     "reload_auth_config",
+    "require_any_permission",
     "require_groups",
     "require_permission",
     "verify_jwt",
