@@ -742,9 +742,8 @@ async function savePolicies() {
               <v-window-item value="sessions">
                 <div class="mt-4">
                   <div class="d-flex justify-space-between align-center mb-3">
-                    <h3 class="text-subtitle-2 font-weight-medium d-flex align-center ga-2">
+                    <h3 class="text-subtitle-2 font-weight-medium">
                       Active Sessions
-                      <v-chip v-if="eventSource" size="x-small" color="success" variant="tonal" prepend-icon="mdi-broadcast">live</v-chip>
                     </h3>
                     <v-btn size="small" variant="text" color="primary" prepend-icon="mdi-refresh" @click="fetchJitSessions" :loading="isLoadingSessions">
                       Refresh
@@ -802,10 +801,7 @@ async function savePolicies() {
                               </span>
                             </template>
                             <template v-else-if="sess.status === 'PENDING_APPROVAL' || sess.status === 'PENDING'">
-                              <span class="text-warning">
-                                <v-icon size="x-small" start>mdi-account-clock</v-icon>
-                                Awaiting platform approval
-                              </span>
+                              <span class="text-warning">Awaiting platform approval</span>
                             </template>
                             <template v-else-if="sess.status === 'EXPIRED'">
                               <span class="text-secondary"><v-icon size="x-small" start>mdi-history</v-icon>Session expired</span>

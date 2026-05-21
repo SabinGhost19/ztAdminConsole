@@ -2,39 +2,33 @@
 import { Handle, Position } from '@vue-flow/core'
 import type { ImageNodeData } from './types'
 
-defineProps<{ data: ImageNodeData }>()
+const props = defineProps<{ data: ImageNodeData }>()
 
-const VERDICT_COLOR: Record<string, string> = {
-  critical: 'error',
-  exempted: 'success',
-  latent: 'grey',
-}
-
-function shortenDigest(d: string): string {
+function shortDigest(d: string): string {
   if (!d.startsWith('sha256:')) return d
-  return 'sha256:' + d.slice(7, 19) + '…'
+  return d.slice(0, 19) + '…'
 }
+
+const repoLabel = props.data.repo || props.data.image.image
 </script>
 
 <template>
-  <div :class="['br-node', `br-node--${data.verdict}`]">
+  <div :class="['br-node', `br-node--${data.verdict}`]" :data-kind="data.kind">
+    <div class="br-node__rail" />
+    <div class="br-node__body">
+      <div class="br-node__row">
+        <span class="material-symbols-outlined br-node__icon">deployed_code_history</span>
+        <span class="br-node__title br-node__title--mono" :title="data.image.image">
+          {{ repoLabel }}
+        </span>
+      </div>
+      <div class="br-node__meta">{{ shortDigest(data.digest) || 'no digest' }}</div>
+    </div>
     <Handle type="target" :position="Position.Left" />
     <Handle type="source" :position="Position.Right" />
-    <div class="br-node__icon">
-      <v-icon size="20" :color="VERDICT_COLOR[data.verdict]">mdi-docker</v-icon>
-    </div>
-    <div class="br-node__body">
-      <div class="br-node__title text-mono" :title="data.image.image">
-        {{ data.repo || data.image.image }}
-      </div>
-      <div class="br-node__meta text-mono text-caption text-medium-emphasis">
-        {{ shortenDigest(data.digest) }}
-      </div>
-    </div>
   </div>
 </template>
 
 <style scoped>
-.br-node { width: 320px; height: 90px; }
-.br-node__title { font-size: 0.78rem; overflow: hidden; text-overflow: ellipsis; }
+.br-node { width: 320px; height: 64px; }
 </style>

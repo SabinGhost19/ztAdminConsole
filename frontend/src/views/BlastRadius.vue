@@ -12,12 +12,7 @@
 import { computed, reactive, ref } from 'vue'
 import { api } from '../api/axios'
 import BlastRadiusTopology from './blast-radius/BlastRadiusTopology.vue'
-import BlastRadiusInspector from './blast-radius/BlastRadiusInspector.vue'
-import type {
-  BlastNodeData,
-  BlastRadiusResponse,
-  VulnerablePackage,
-} from './blast-radius/types'
+import type { BlastRadiusResponse } from './blast-radius/types'
 
 const state = reactive({
   cve: '',
@@ -27,19 +22,9 @@ const state = reactive({
 })
 
 // "Only in-cluster" filter — default ON so the auditor sees the actionable
-// signal first (packages with live deployments). Toggle OFF reveals the
-// graph-only packages too.
+// signal first (packages with live deployments). The counter chips inside
+// the topology toolbar surface the M/N breakdown directly.
 const onlyInCluster = ref(true)
-
-function packageIsInCluster(pkg: VulnerablePackage): boolean {
-  return (pkg.affectedImages ?? []).some(img => (img.deployments?.length ?? 0) > 0)
-}
-
-// Header counters — filtering itself happens inside the topology component.
-const totalPackages = computed(() => state.data?.vulnerablePackages?.length ?? 0)
-const inClusterCount = computed(
-  () => (state.data?.vulnerablePackages ?? []).filter(packageIsInCluster).length,
-)
 
 const guacHealth = ref<{ reachable: boolean; endpoint?: string; reason?: string } | null>(null)
 
@@ -125,16 +110,6 @@ async function runQuery() {
   }
 }
 
-// Inspector (right-side drawer) state. The topology component emits the
-// `data` payload of the clicked node — we just keep a copy and toggle the
-// drawer open.
-const inspectorOpen = ref(false)
-const inspectorSelected = ref<BlastNodeData | null>(null)
-function onNodeSelected(data: BlastNodeData) {
-  inspectorSelected.value = data
-  inspectorOpen.value = true
-}
-
 probeGuac()
 loadKnownVulnerabilities()
 </script>
@@ -218,19 +193,6 @@ loadKnownVulnerabilities()
           Simulate Blast Radius
         </v-btn>
       </v-card-text>
-      <v-card-text class="py-2 d-flex align-center">
-        <v-switch
-          v-model="onlyInCluster"
-          label="Doar pachete care rulează în cluster"
-          color="primary"
-          density="compact"
-          hide-details
-        />
-        <v-spacer />
-        <span v-if="state.data && totalPackages" class="text-medium-emphasis text-caption">
-          {{ inClusterCount }} în cluster / {{ totalPackages }} total în graf
-        </span>
-      </v-card-text>
     </v-card>
 
     <v-alert v-if="state.errorMessage" type="error" class="mb-4" variant="tonal" closable @click:close="state.errorMessage = ''">
@@ -247,14 +209,7 @@ loadKnownVulnerabilities()
     <BlastRadiusTopology
       v-if="state.data"
       :response="state.data"
-      :only-in-cluster="onlyInCluster"
-      @node-selected="onNodeSelected"
-      @disable-filter="onlyInCluster = false"
-    />
-
-    <BlastRadiusInspector
-      v-model="inspectorOpen"
-      :selected="inspectorSelected"
+      v-model:only-in-cluster="onlyInCluster"
     />
   </v-container>
 </template>

@@ -1,57 +1,508 @@
 /*
- * Shared node styles for the Blast Radius topology.
- * Imported once at the canvas level so all node components share the same
- * card aesthetic without each Vue component carrying its own copy.
+ * Blast Radius topology — design system tokens and component styles.
+ *
+ * Aesthetic target: Google Cloud Console / Material 3, dark-surface
+ * variant. The objective is "high-density, low-clutter": typography
+ * carries the information, accents communicate state, chrome is
+ * intentionally muted.
+ *
+ * Token naming follows Material 3 conventions where applicable.
  */
 
-.br-node {
+/* Material Symbols default sizing — overridable via inline font-size. */
+.material-symbols-outlined {
+  font-family: 'Material Symbols Outlined', sans-serif;
+  font-weight: normal;
+  font-style: normal;
+  font-size: 18px;
+  line-height: 1;
+  letter-spacing: normal;
+  text-transform: none;
+  display: inline-block;
+  white-space: nowrap;
+  word-wrap: normal;
+  direction: ltr;
+  font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+  -webkit-font-feature-settings: 'liga';
+  font-feature-settings: 'liga';
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+}
+
+:root {
+  /* Semantic accents — only three, never overload. */
+  --br-accent-critical: #f87171;   /* rose 400 */
+  --br-accent-exempted: #34d399;   /* emerald 400 */
+  --br-accent-latent:   #71717a;   /* zinc 500 */
+
+  /* Surface ramp (Material 3 dark). */
+  --br-surface:           #0e1116;
+  --br-surface-1:         #14181f;
+  --br-surface-2:         #1a1f27;
+  --br-surface-overlay:   #1f2530;
+  --br-outline:           rgba(255, 255, 255, 0.10);
+  --br-outline-strong:    rgba(255, 255, 255, 0.16);
+  --br-outline-focus:     #60a5fa;
+
+  --br-text:              #e4e4e7;
+  --br-text-secondary:    #a1a1aa;
+  --br-text-tertiary:     #71717a;
+
+  /* Material 3 elevation tokens. Two shadows stacked = perceptible
+   * depth without "halo" artefacts on dark surfaces.
+   */
+  --br-elevation-1: 0 1px 2px rgba(0, 0, 0, 0.30);
+  --br-elevation-3: 0 1px 3px rgba(0, 0, 0, 0.40),
+                    0 4px 8px rgba(0, 0, 0, 0.32);
+  --br-elevation-4: 0 1px 3px rgba(0, 0, 0, 0.45),
+                    0 10px 24px rgba(0, 0, 0, 0.36);
+}
+
+/* ----------------------------------------------------------------------
+ * Canvas chrome
+ * --------------------------------------------------------------------*/
+
+.br-canvas {
+  position: relative;
+  width: 100%;
+  height: calc(80vh - 56px);
+  min-height: 520px;
+  background: var(--br-surface);
+  border: 1px solid var(--br-outline);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.br-canvas .vue-flow__background {
+  /* Subtle dot grid, GCP Console style. */
+  background-color: var(--br-surface);
+}
+.br-canvas .vue-flow__controls {
+  box-shadow: var(--br-elevation-1);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.br-canvas .vue-flow__controls-button {
+  background: var(--br-surface-1);
+  color: var(--br-text);
+  border-bottom: 1px solid var(--br-outline);
+}
+.br-canvas .vue-flow__controls-button:hover {
+  background: var(--br-surface-2);
+}
+.br-canvas .vue-flow__minimap {
+  background: rgba(20, 24, 31, 0.92);
+  border: 1px solid var(--br-outline);
+  border-radius: 8px;
+  box-shadow: var(--br-elevation-1);
+}
+
+/* ----------------------------------------------------------------------
+ * Toolbar (sticky, above canvas)
+ * --------------------------------------------------------------------*/
+
+.br-toolbar {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 10px 12px;
-  border-radius: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  background: rgb(var(--v-theme-surface));
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.18);
-  font-family: 'Inter', system-ui, sans-serif;
+  gap: 12px;
+  padding: 8px 12px;
+  background: var(--br-surface-1);
+  border: 1px solid var(--br-outline);
+  border-bottom: none;
+  border-radius: 8px 8px 0 0;
+  min-height: 56px;
+}
+.br-toolbar__group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.br-toolbar__divider {
+  width: 1px;
+  height: 24px;
+  background: var(--br-outline);
+}
+.br-toolbar__spacer { flex: 1; }
+
+/* GCP-style icon button. Square 36px, no hover halo by default. */
+.br-icon-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  color: var(--br-text-secondary);
+  border: none;
   cursor: pointer;
-  transition: transform 0.12s ease, box-shadow 0.12s ease, opacity 0.18s ease;
+  transition: background 120ms ease, color 120ms ease;
+}
+.br-icon-btn:hover {
+  background: var(--br-surface-2);
+  color: var(--br-text);
+}
+.br-icon-btn:focus-visible {
+  outline: 2px solid var(--br-outline-focus);
+  outline-offset: 2px;
+}
+.br-icon-btn--active {
+  background: rgba(96, 165, 250, 0.16);
+  color: #93c5fd;
 }
 
+/* Chip filter (GCP pill style). */
+.br-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 16px;
+  background: transparent;
+  border: 1px solid var(--br-outline-strong);
+  color: var(--br-text-secondary);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 120ms ease;
+  user-select: none;
+}
+.br-chip:hover {
+  background: var(--br-surface-2);
+  color: var(--br-text);
+}
+.br-chip--active {
+  background: rgba(96, 165, 250, 0.12);
+  border-color: rgba(96, 165, 250, 0.5);
+  color: #bfdbfe;
+}
+
+.br-counter {
+  font-size: 12px;
+  color: var(--br-text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ----------------------------------------------------------------------
+ * Custom nodes
+ *
+ * Anatomy:
+ *   ┌─┬────────────────────────────┐
+ *   │A│  primary-label             │   A = 4px accent rail
+ *   │ │  secondary-meta            │
+ *   └─┴────────────────────────────┘
+ *
+ * The accent rail is the only colored surface in the baseline state.
+ * --------------------------------------------------------------------*/
+
+.br-node {
+  display: grid;
+  grid-template-columns: 4px 1fr;
+  align-items: stretch;
+  background: var(--br-surface-1);
+  border: 1px solid var(--br-outline);
+  border-radius: 8px;
+  font-family: 'Google Sans Text', 'Inter', system-ui, sans-serif;
+  cursor: grab;
+  transition: border-color 120ms ease, box-shadow 120ms ease, opacity 180ms ease;
+  overflow: hidden;
+}
+.br-node:active { cursor: grabbing; }
 .br-node:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.28);
+  border-color: var(--br-outline-strong);
+  box-shadow: var(--br-elevation-1);
 }
 
-.br-node__icon { flex: 0 0 auto; }
-.br-node__body { flex: 1 1 auto; min-width: 0; }
+.br-node__rail {
+  background: var(--br-accent-latent);
+}
+.br-node--critical .br-node__rail { background: var(--br-accent-critical); }
+.br-node--exempted .br-node__rail { background: var(--br-accent-exempted); }
+.br-node--latent   .br-node__rail { background: var(--br-accent-latent); opacity: 0.55; }
+
+.br-node--latent { opacity: 0.78; }
+
+.br-node__body {
+  padding: 10px 14px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+  min-width: 0;
+}
+
+.br-node__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
 
 .br-node__title {
-  font-size: 0.88rem;
+  font-size: 13px;
   font-weight: 500;
+  color: var(--br-text);
+  letter-spacing: 0.1px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
-
+.br-node__title--mono {
+  font-family: 'Roboto Mono', 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 12.5px;
+}
+.br-node__sub {
+  font-size: 11.5px;
+  color: var(--br-text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .br-node__meta {
-  font-size: 0.75rem;
-  color: rgba(var(--v-theme-on-surface), 0.7);
-  margin-top: 2px;
+  font-size: 11px;
+  color: var(--br-text-tertiary);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.2px;
+}
+.br-node__icon {
+  flex-shrink: 0;
+  color: var(--br-text-secondary);
+  font-size: 16px;
+  width: 16px;
+  height: 16px;
 }
 
-.br-node--critical { border-color: rgba(239, 83, 80, 0.55); }
-.br-node--exempted { border-color: rgba(102, 187, 106, 0.55); }
-.br-node--latent   { border-color: rgba(158, 158, 158, 0.4); opacity: 0.85; }
-
-/* Path highlight: dim non-active nodes/edges when something is hovered. */
-.br-graph--has-hover .vue-flow__node:not(.br-node--active),
-.br-graph--has-hover .vue-flow__edge:not(.br-edge--active) {
-  opacity: 0.18;
+/* Vue Flow handle styling — keep the docking points discreet. */
+.br-node .vue-flow__handle {
+  background: var(--br-outline-strong);
+  border: 1px solid var(--br-surface);
+  width: 6px;
+  height: 6px;
 }
-.br-graph--has-hover .vue-flow__node.br-node--active,
-.br-graph--has-hover .vue-flow__edge.br-edge--active {
+
+/* Selected (clicked) node — Material 3 secondary-container tint. */
+.br-node--selected {
+  border-color: var(--br-outline-focus);
+  box-shadow: 0 0 0 1px var(--br-outline-focus), var(--br-elevation-3);
+}
+
+/* ----------------------------------------------------------------------
+ * Path highlight (hover)
+ * --------------------------------------------------------------------*/
+
+.br-canvas--has-hover .vue-flow__node:not(.br-node--active),
+.br-canvas--has-hover .vue-flow__edge:not(.br-edge--active) {
+  opacity: 0.22;
+  filter: saturate(0.55);
+}
+.br-canvas--has-hover .vue-flow__node.br-node--active,
+.br-canvas--has-hover .vue-flow__edge.br-edge--active {
   opacity: 1;
+  filter: none;
 }
 
-.text-mono { font-family: 'JetBrains Mono', 'Fira Code', monospace; font-size: 0.85rem; }
+/* ----------------------------------------------------------------------
+ * Floating overlay (replaces side drawer)
+ * --------------------------------------------------------------------*/
+
+.br-overlay {
+  background: var(--br-surface-overlay);
+  border: 1px solid var(--br-outline-strong);
+  border-radius: 10px;
+  box-shadow: var(--br-elevation-4);
+  width: 340px;
+  max-width: 92vw;
+  color: var(--br-text);
+  font-family: 'Google Sans Text', 'Inter', system-ui, sans-serif;
+  font-size: 13px;
+  z-index: 1000;
+  animation: br-overlay-in 160ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+@keyframes br-overlay-in {
+  from { opacity: 0; transform: scale(0.96); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+.br-overlay__head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px 10px;
+  border-bottom: 1px solid var(--br-outline);
+}
+.br-overlay__rail {
+  width: 4px;
+  align-self: stretch;
+  border-radius: 2px;
+  background: var(--br-accent-latent);
+}
+.br-overlay--critical .br-overlay__rail { background: var(--br-accent-critical); }
+.br-overlay--exempted .br-overlay__rail { background: var(--br-accent-exempted); }
+
+.br-overlay__kind {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--br-text-tertiary);
+  font-weight: 500;
+}
+.br-overlay__title {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--br-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.br-overlay__close {
+  margin-left: auto;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  color: var(--br-text-tertiary);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.br-overlay__close:hover { background: var(--br-surface-2); color: var(--br-text); }
+
+.br-overlay__body { padding: 12px 14px; }
+.br-overlay__row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  padding: 5px 0;
+}
+.br-overlay__row + .br-overlay__row { border-top: 1px solid rgba(255,255,255,0.04); }
+.br-overlay__label {
+  font-size: 11.5px;
+  color: var(--br-text-secondary);
+  text-transform: none;
+  letter-spacing: 0.1px;
+}
+.br-overlay__value {
+  font-size: 12.5px;
+  color: var(--br-text);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  word-break: break-all;
+  max-width: 60%;
+}
+.br-overlay__value--mono {
+  font-family: 'Roboto Mono', ui-monospace, monospace;
+  font-size: 11.5px;
+}
+
+.br-overlay__section-title {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.7px;
+  color: var(--br-text-tertiary);
+  margin: 10px 0 6px;
+}
+
+.br-overlay__actions {
+  display: flex;
+  gap: 8px;
+  padding: 10px 14px 12px;
+  border-top: 1px solid var(--br-outline);
+}
+.br-overlay__action {
+  flex: 1;
+  height: 32px;
+  border-radius: 6px;
+  border: 1px solid var(--br-outline-strong);
+  background: transparent;
+  color: var(--br-text);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  transition: background 120ms ease;
+}
+.br-overlay__action:hover { background: var(--br-surface-2); }
+.br-overlay__action--primary {
+  background: #2563eb;
+  border-color: #2563eb;
+  color: white;
+}
+.br-overlay__action--primary:hover { background: #1d4ed8; }
+
+.br-overlay__chip {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 8px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 500;
+}
+.br-overlay__chip--critical { background: rgba(248, 113, 113, 0.16); color: #fca5a5; }
+.br-overlay__chip--exempted { background: rgba(52, 211, 153, 0.16); color: #6ee7b7; }
+.br-overlay__chip--latent   { background: rgba(113, 113, 122, 0.20); color: var(--br-text-secondary); }
+.br-overlay__chip--neutral  { background: rgba(255, 255, 255, 0.06); color: var(--br-text-secondary); }
+
+/* Floating-UI arrow */
+.br-overlay__arrow {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  background: var(--br-surface-overlay);
+  border-left: 1px solid var(--br-outline-strong);
+  border-top: 1px solid var(--br-outline-strong);
+  transform: rotate(45deg);
+}
+
+/* ----------------------------------------------------------------------
+ * Empty-state overlay
+ * --------------------------------------------------------------------*/
+
+.br-empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  pointer-events: none;
+  color: var(--br-text-secondary);
+}
+.br-empty__icon {
+  font-size: 40px;
+  margin-bottom: 12px;
+}
+.br-empty__title {
+  font-size: 16px;
+  font-weight: 500;
+  color: var(--br-text);
+  margin-bottom: 6px;
+}
+.br-empty__body {
+  font-size: 13px;
+  max-width: 380px;
+  line-height: 1.45;
+}
+.br-empty__action {
+  pointer-events: auto;
+  margin-top: 14px;
+  height: 36px;
+  padding: 0 18px;
+  border-radius: 18px;
+  border: none;
+  background: #2563eb;
+  color: white;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.br-empty__action:hover { background: #1d4ed8; }

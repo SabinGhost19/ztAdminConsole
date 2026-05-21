@@ -21,11 +21,13 @@ import type {
 // Approximate node dimensions used by Dagre. The real DOM size is set in
 // each node component via fixed widths so this is accurate enough for
 // the layout pass — drift of a few pixels is invisible.
+// Must mirror the fixed widths/heights declared in each node component.
+// Dagre lays out on rectangles, so any drift here produces overlaps.
 const NODE_DIMS: Record<string, { width: number; height: number }> = {
-  cve: { width: 220, height: 110 },
-  package: { width: 220, height: 90 },
-  image: { width: 320, height: 90 },
-  deployment: { width: 240, height: 90 },
+  cve:        { width: 240, height: 64 },
+  package:    { width: 240, height: 64 },
+  image:      { width: 320, height: 64 },
+  deployment: { width: 260, height: 64 },
 }
 
 function deploymentVerdict(dep: DeploymentEntry): Verdict {

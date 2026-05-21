@@ -6,42 +6,28 @@ defineProps<{ data: DeploymentNodeData }>()
 </script>
 
 <template>
-  <div :class="['br-node', `br-node--${data.verdict}`]">
-    <Handle type="target" :position="Position.Left" />
-    <div class="br-node__icon">
-      <v-icon
-        size="22"
-        :color="data.verdict === 'exempted' ? 'success' : 'error'"
-      >
-        {{ data.verdict === 'exempted' ? 'mdi-shield-check' : 'mdi-alert-octagon' }}
-      </v-icon>
-    </div>
+  <div :class="['br-node', `br-node--${data.verdict}`]" :data-kind="data.kind">
+    <div class="br-node__rail" />
     <div class="br-node__body">
-      <div class="br-node__title">
-        {{ data.deployment.namespace }} / {{ data.deployment.name }}
+      <div class="br-node__row">
+        <span class="material-symbols-outlined br-node__icon">
+          {{ data.verdict === 'exempted' ? 'shield' : 'warning' }}
+        </span>
+        <span class="br-node__title">
+          {{ data.deployment.namespace }} / {{ data.deployment.name }}
+        </span>
       </div>
-      <div class="br-node__meta d-flex flex-wrap ga-1">
-        <v-chip
-          v-if="data.deployment.trustLevel"
-          size="x-small"
-          variant="outlined"
-          density="compact"
-        >
-          trust={{ data.deployment.trustLevel }}
-        </v-chip>
-        <v-chip
-          size="x-small"
-          :color="data.verdict === 'exempted' ? 'success' : 'error'"
-          variant="tonal"
-          density="compact"
-        >
-          {{ data.verdict === 'exempted' ? 'VEX exempt' : 'Action required' }}
-        </v-chip>
+      <div class="br-node__meta">
+        {{ data.verdict === 'exempted' ? 'VEX exempt' : 'Action required' }}
+        <template v-if="data.deployment.trustLevel">
+          · trust={{ data.deployment.trustLevel }}
+        </template>
       </div>
     </div>
+    <Handle type="target" :position="Position.Left" />
   </div>
 </template>
 
 <style scoped>
-.br-node { width: 240px; height: 90px; }
+.br-node { width: 260px; height: 64px; }
 </style>

@@ -1,30 +1,39 @@
 <script setup lang="ts">
-// Canvas + custom-node renderer for the Blast Radius topology.
+// Blast Radius topology — Google Cloud Console aesthetic.
 //
-// The parent (BlastRadius.vue) owns the data and the toggle; this component
-// just turns that into a left-to-right Vue Flow graph and lets the user
-// hover/click around. State that escapes the canvas:
-//   - `nodeSelected`  event with the data of the clicked node (for drawer)
+// Composition:
+//   - Top toolbar (GCP-style icon buttons + filter chips + counters)
+//   - VueFlow canvas with draggable nodes, MiniMap, Controls
+//   - Floating contextual overlay (replaces side drawer)
+//
+// All node positions are deterministic from the response via Dagre;
+// once laid out, nodes are user-draggable so the auditor can rearrange
+// without losing the initial reading order.
 
-import { computed, markRaw, ref, watch } from 'vue'
-import { Background } from '@vue-flow/background'
+import { computed, ref, shallowRef, watch } from 'vue'
+import { Background, BackgroundVariant } from '@vue-flow/background'
 import { Controls } from '@vue-flow/controls'
+import { MiniMap } from '@vue-flow/minimap'
 import {
   type Edge,
   type Node,
   type NodeMouseEvent,
+  useVueFlow,
   VueFlow,
 } from '@vue-flow/core'
+import type { VirtualElement } from '@floating-ui/vue'
 import '@vue-flow/core/dist/style.css'
 import '@vue-flow/core/dist/theme-default.css'
 import '@vue-flow/controls/dist/style.css'
+import '@vue-flow/minimap/dist/style.css'
 
 import CveNode from './CveNode.vue'
 import PackageNode from './PackageNode.vue'
 import ImageNode from './ImageNode.vue'
 import DeploymentNode from './DeploymentNode.vue'
+import BlastRadiusOverlay from './BlastRadiusOverlay.vue'
 import { buildBlastRadiusGraph } from './useBlastRadiusGraph'
-import type { BlastNodeData, BlastRadiusResponse } from './types'
+import type { BlastNodeData, BlastRadiusResponse, Verdict } from './types'
 import './nodes.css'
 
 const props = defineProps<{
@@ -33,204 +42,310 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  (e: 'nodeSelected', data: BlastNodeData): void
-  (e: 'disableFilter'): void
+  (e: 'update:onlyInCluster', v: boolean): void
 }>()
 
-// Vue Flow types `node-types` as a record of `NodeComponent` instances and
-// chokes on the SFC-inferred type of a plain import. `markRaw` on a record
-// of components matches the API and prevents Vue from wrapping them in a
-// reactive proxy (which would be unnecessary churn anyway).
-const nodeTypes = markRaw({
+const nodeTypes = {
   cveNode: CveNode,
   packageNode: PackageNode,
   imageNode: ImageNode,
   deploymentNode: DeploymentNode,
-}) as Record<string, unknown>
+} as Record<string, unknown>
 
 const nodes = ref<Node<BlastNodeData>[]>([])
 const edges = ref<Edge[]>([])
 const packageCount = ref(0)
 const inClusterCount = ref(0)
 
+// VueFlow gives us a programmatic instance for fitView/zoom controls
+// and for translating screen coordinates to canvas coordinates (used
+// by the floating overlay).
+const { fitView, zoomIn, zoomOut, project, viewport } = useVueFlow()
+
 watch(
   () => [props.response, props.onlyInCluster] as const,
   ([resp, only]) => {
     if (!resp) {
-      nodes.value = []
-      edges.value = []
-      packageCount.value = 0
-      inClusterCount.value = 0
+      nodes.value = []; edges.value = []
+      packageCount.value = 0; inClusterCount.value = 0
       return
     }
-    const built = buildBlastRadiusGraph({
-      response: resp,
-      onlyInCluster: !!only,
-    })
+    const built = buildBlastRadiusGraph({ response: resp, onlyInCluster: !!only })
     nodes.value = built.nodes
     edges.value = built.edges
     packageCount.value = built.packageCount
     inClusterCount.value = built.inClusterCount
+    // Wait for the DOM to settle before fitting the view.
+    requestAnimationFrame(() => fitView({ padding: 0.18, duration: 200 }))
   },
   { immediate: true, deep: true },
 )
 
-// Hover-highlight: find every node/edge on the path between the hovered
-// node and the CVE root, mark them as active, dim the rest via CSS.
+// Verdict counts per package category. Shown as chips in the toolbar
+// and as the "filter by verdict" affordance.
+const verdictCounts = computed(() => {
+  const out: Record<Verdict, number> = { critical: 0, exempted: 0, latent: 0 }
+  for (const p of props.response?.vulnerablePackages ?? []) {
+    const imgs = p.affectedImages ?? []
+    if (imgs.length === 0 || imgs.every(i => (i.deployments ?? []).length === 0)) {
+      out.latent++
+    } else if (imgs.every(i => (i.deployments ?? []).every(d => d.vexExempted))) {
+      out.exempted++
+    } else {
+      out.critical++
+    }
+  }
+  return out
+})
+
+/* --------------------------------------------------------------------
+ * Hover-driven path highlighting (ancestors + descendants).
+ * ------------------------------------------------------------------*/
 const activeNodeIds = ref<Set<string>>(new Set())
 const activeEdgeIds = ref<Set<string>>(new Set())
 
-function ancestorsOf(id: string): { nodes: Set<string>; edges: Set<string> } {
-  const ns = new Set<string>([id])
-  const es = new Set<string>()
-  // Walk up: at each step find the edge whose target is the current id.
+function traverse(id: string, forward: boolean): { nodes: Set<string>; edges: Set<string> } {
+  const ns = new Set<string>([id]); const es = new Set<string>()
   let frontier: Set<string> = new Set([id])
-  while (frontier.size > 0) {
+  while (frontier.size) {
     const next = new Set<string>()
     for (const e of edges.value) {
-      if (frontier.has(e.target)) {
-        es.add(e.id)
-        if (!ns.has(e.source)) {
-          ns.add(e.source)
-          next.add(e.source)
-        }
-      }
+      const match = forward ? frontier.has(e.source) : frontier.has(e.target)
+      if (!match) continue
+      const adj = forward ? e.target : e.source
+      es.add(e.id)
+      if (!ns.has(adj)) { ns.add(adj); next.add(adj) }
     }
     frontier = next
   }
   return { nodes: ns, edges: es }
 }
 
-function descendantsOf(id: string): { nodes: Set<string>; edges: Set<string> } {
-  const ns = new Set<string>([id])
-  const es = new Set<string>()
-  let frontier: Set<string> = new Set([id])
-  while (frontier.size > 0) {
-    const next = new Set<string>()
-    for (const e of edges.value) {
-      if (frontier.has(e.source)) {
-        es.add(e.id)
-        if (!ns.has(e.target)) {
-          ns.add(e.target)
-          next.add(e.target)
-        }
-      }
-    }
-    frontier = next
-  }
-  return { nodes: ns, edges: es }
-}
-
-function handleNodeMouseEnter(evt: NodeMouseEvent) {
+function onNodeEnter(evt: NodeMouseEvent) {
   const id = evt.node.id
-  const up = ancestorsOf(id)
-  const down = descendantsOf(id)
+  const up = traverse(id, false)
+  const down = traverse(id, true)
   activeNodeIds.value = new Set([...up.nodes, ...down.nodes])
   activeEdgeIds.value = new Set([...up.edges, ...down.edges])
 }
-
-function handleNodeMouseLeave() {
+function onNodeLeave() {
   activeNodeIds.value = new Set()
   activeEdgeIds.value = new Set()
 }
-
-function handleNodeClick(evt: NodeMouseEvent) {
-  const data = (evt.node.data ?? null) as BlastNodeData | null
-  if (data) emit('nodeSelected', data)
-}
-
 const hasHover = computed(() => activeNodeIds.value.size > 0)
 
-// Class binding wired through the `:node-class` / `:edge-class` props on
-// <VueFlow>. Returning '' is the no-op default.
 function nodeClass(n: Node): string {
-  return activeNodeIds.value.has(n.id) ? 'br-node--active' : ''
+  const cls: string[] = []
+  if (activeNodeIds.value.has(n.id)) cls.push('br-node--active')
+  if (selectedNodeId.value === n.id) cls.push('br-node--selected')
+  return cls.join(' ')
 }
 function edgeClass(e: Edge): string {
   return activeEdgeIds.value.has(e.id) ? 'br-edge--active' : ''
 }
 
-const showFilteredEmpty = computed(() => {
-  return (
-    props.response &&
-    props.onlyInCluster &&
-    packageCount.value > 0 &&
-    inClusterCount.value === 0
-  )
-})
+/* --------------------------------------------------------------------
+ * Floating overlay anchoring.
+ *
+ * Floating UI takes a "virtual element" (an object exposing
+ * getBoundingClientRect) as the reference. On click we capture the
+ * node's DOM element via the event and store it; the overlay then
+ * positions itself relative to that rectangle and re-projects on
+ * viewport changes.
+ * ------------------------------------------------------------------*/
+const selectedNodeId = ref<string | null>(null)
+const selectedNodeData = shallowRef<BlastNodeData | null>(null)
+const anchor = shallowRef<VirtualElement | null>(null)
+const overlayOpen = ref(false)
 
-const showNoCveEmpty = computed(() => {
-  return props.response && packageCount.value === 0
-})
+function onNodeClick(evt: NodeMouseEvent) {
+  const data = (evt.node.data ?? null) as BlastNodeData | null
+  if (!data) return
+  selectedNodeId.value = evt.node.id
+  selectedNodeData.value = data
+  const el = (evt.event.target as HTMLElement)?.closest('.vue-flow__node') as HTMLElement | null
+  if (!el) return
+  // Wrap the live DOM element so Floating UI re-evaluates on scroll/zoom.
+  anchor.value = {
+    getBoundingClientRect: () => el.getBoundingClientRect(),
+    contextElement: el,
+  }
+  overlayOpen.value = true
+}
+
+function closeOverlay() {
+  overlayOpen.value = false
+  selectedNodeId.value = null
+  selectedNodeData.value = null
+  anchor.value = null
+}
+function onPaneClick() { closeOverlay() }
+
+/* --------------------------------------------------------------------
+ * Toolbar actions.
+ * ------------------------------------------------------------------*/
+function doFitView() { void fitView({ padding: 0.18, duration: 240 }) }
+function doZoomIn() { void zoomIn({ duration: 160 }) }
+function doZoomOut() { void zoomOut({ duration: 160 }) }
+
+/* --------------------------------------------------------------------
+ * Empty-state conditions.
+ * ------------------------------------------------------------------*/
+const showFilteredEmpty = computed(() =>
+  props.response && props.onlyInCluster && packageCount.value > 0 && inClusterCount.value === 0,
+)
+const showNoCveEmpty = computed(() =>
+  props.response && packageCount.value === 0,
+)
 </script>
 
 <template>
-  <div :class="['br-graph', { 'br-graph--has-hover': hasHover }]">
-    <VueFlow
-      :nodes="nodes"
-      :edges="edges"
-      :node-types="(nodeTypes as any)"
-      :node-class="nodeClass"
-      :edge-class="edgeClass"
-      :nodes-draggable="false"
-      :nodes-connectable="false"
-      :elements-selectable="true"
-      :fit-view-on-init="true"
-      :min-zoom="0.2"
-      :max-zoom="2"
-      @node-mouse-enter="handleNodeMouseEnter"
-      @node-mouse-leave="handleNodeMouseLeave"
-      @node-click="handleNodeClick"
-    >
-      <Background pattern-color="rgba(255,255,255,0.06)" :gap="22" />
-      <Controls />
-    </VueFlow>
+  <div class="br-canvas-wrap">
+    <!-- ============================================================ -->
+    <!-- Toolbar — GCP Console icon-buttons + chip filters             -->
+    <!-- ============================================================ -->
+    <div class="br-toolbar">
+      <div class="br-toolbar__group">
+        <button
+          :class="['br-chip', { 'br-chip--active': onlyInCluster }]"
+          @click="emit('update:onlyInCluster', !onlyInCluster)"
+          :title="onlyInCluster ? 'Showing only packages with live deployments' : 'Showing every vulnerable package'"
+        >
+          <span class="material-symbols-outlined" style="font-size: 16px;">
+            {{ onlyInCluster ? 'filter_alt' : 'filter_alt_off' }}
+          </span>
+          In-cluster only
+        </button>
+      </div>
 
-    <!-- Overlay empty states. Rendered on top of an (empty) canvas so the
-         controls still feel anchored. -->
-    <div v-if="showNoCveEmpty" class="br-empty">
-      <v-icon size="48" color="success">mdi-shield-check-outline</v-icon>
-      <p class="text-h6 mt-3">Niciun pachet vulnerabil în GUAC</p>
-      <p class="text-medium-emphasis text-body-2">
-        Graful nu cunoaște niciun pachet afectat de {{ response?.cve }}.
-      </p>
+      <div class="br-toolbar__divider" />
+
+      <div class="br-toolbar__group">
+        <span class="br-overlay__chip br-overlay__chip--critical" v-if="verdictCounts.critical">
+          {{ verdictCounts.critical }} critical
+        </span>
+        <span class="br-overlay__chip br-overlay__chip--exempted" v-if="verdictCounts.exempted">
+          {{ verdictCounts.exempted }} exempted
+        </span>
+        <span class="br-overlay__chip br-overlay__chip--latent" v-if="verdictCounts.latent">
+          {{ verdictCounts.latent }} latent
+        </span>
+      </div>
+
+      <div class="br-toolbar__spacer" />
+
+      <span class="br-counter" v-if="response">
+        {{ inClusterCount }} of {{ packageCount }} packages
+      </span>
+
+      <div class="br-toolbar__divider" />
+
+      <div class="br-toolbar__group">
+        <button class="br-icon-btn" @click="doZoomOut" title="Zoom out" aria-label="Zoom out">
+          <span class="material-symbols-outlined">remove</span>
+        </button>
+        <button class="br-icon-btn" @click="doZoomIn" title="Zoom in" aria-label="Zoom in">
+          <span class="material-symbols-outlined">add</span>
+        </button>
+        <button class="br-icon-btn" @click="doFitView" title="Fit graph to view" aria-label="Fit view">
+          <span class="material-symbols-outlined">fit_screen</span>
+        </button>
+      </div>
     </div>
 
-    <div v-else-if="showFilteredEmpty" class="br-empty">
-      <v-icon size="44" color="warning">mdi-filter-outline</v-icon>
-      <p class="text-h6 mt-3">Niciun deployment afectat activ</p>
-      <p class="text-medium-emphasis text-body-2 mb-3">
-        {{ packageCount }} pachete vulnerabile sunt cunoscute, dar niciunul nu
-        rulează acum în cluster.
-      </p>
-      <v-btn color="primary" variant="tonal" @click="emit('disableFilter')">
-        Afișează pachetele latente din GUAC
-      </v-btn>
+    <!-- ============================================================ -->
+    <!-- Canvas                                                        -->
+    <!-- ============================================================ -->
+    <div :class="['br-canvas', { 'br-canvas--has-hover': hasHover }]">
+      <VueFlow
+        :nodes="nodes"
+        :edges="edges"
+        :node-types="(nodeTypes as any)"
+        :node-class="nodeClass"
+        :edge-class="edgeClass"
+        :nodes-draggable="true"
+        :nodes-connectable="false"
+        :elements-selectable="true"
+        :pan-on-scroll="false"
+        :zoom-on-scroll="true"
+        :min-zoom="0.2"
+        :max-zoom="2.4"
+        :default-edge-options="{ type: 'smoothstep' }"
+        @node-mouse-enter="onNodeEnter"
+        @node-mouse-leave="onNodeLeave"
+        @node-click="onNodeClick"
+        @pane-click="onPaneClick"
+      >
+        <Background
+          :variant="BackgroundVariant.Dots"
+          :gap="24"
+          :size="1.2"
+          pattern-color="rgba(255, 255, 255, 0.06)"
+        />
+        <Controls
+          :show-zoom="false"
+          :show-fit-view="false"
+          :show-interactive="false"
+          position="bottom-left"
+        />
+        <MiniMap
+          pannable
+          zoomable
+          :node-stroke-width="2"
+          :mask-color="'rgba(14, 17, 22, 0.65)'"
+          :node-color="(n) => {
+            const v = (n.data as BlastNodeData | undefined)
+            if (!v) return 'rgba(255,255,255,0.4)'
+            if ('verdict' in v) {
+              if (v.verdict === 'critical') return '#f87171'
+              if (v.verdict === 'exempted') return '#34d399'
+              return '#71717a'
+            }
+            return '#f87171'
+          }"
+        />
+      </VueFlow>
+
+      <!-- Empty-state overlays painted above the (empty) canvas -->
+      <div v-if="showNoCveEmpty" class="br-empty">
+        <span class="material-symbols-outlined br-empty__icon" style="color: var(--br-accent-exempted);">
+          verified
+        </span>
+        <div class="br-empty__title">No vulnerable packages in graph</div>
+        <div class="br-empty__body">
+          GUAC reports no package affected by <strong>{{ response?.cve }}</strong>.
+        </div>
+      </div>
+
+      <div v-else-if="showFilteredEmpty" class="br-empty">
+        <span class="material-symbols-outlined br-empty__icon" style="color: var(--br-accent-latent);">
+          filter_alt_off
+        </span>
+        <div class="br-empty__title">No live deployment affected</div>
+        <div class="br-empty__body">
+          {{ packageCount }} vulnerable packages are known to GUAC, but none currently
+          runs in the cluster.
+        </div>
+        <button class="br-empty__action" @click="emit('update:onlyInCluster', false)">
+          Show latent packages
+        </button>
+      </div>
     </div>
+
+    <!-- Floating contextual overlay -->
+    <BlastRadiusOverlay
+      :open="overlayOpen"
+      :selected="selectedNodeData"
+      :anchor="anchor"
+      @close="closeOverlay"
+    />
   </div>
 </template>
 
 <style scoped>
-.br-graph {
-  position: relative;
-  width: 100%;
-  height: 70vh;
-  min-height: 480px;
-  background: rgb(var(--v-theme-surface));
-  border: 1px solid rgba(var(--v-theme-on-surface), 0.12);
-  border-radius: 8px;
-  overflow: hidden;
-}
-
-.br-empty {
-  position: absolute;
-  inset: 0;
+.br-canvas-wrap {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  text-align: center;
-  pointer-events: none; /* let canvas controls remain clickable */
+  width: 100%;
 }
-.br-empty .v-btn { pointer-events: auto; }
 </style>

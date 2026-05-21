@@ -18,6 +18,12 @@ rules:
       - supplychainattestations
       - zerotrustsecrets
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  # Status subresource patches (used by the JIT approval endpoint to set
+  # status.approved=true, which triggers the operator's field watcher).
+  - apiGroups: ["devsecops.licenta.ro"]
+    resources:
+      - jitaccessrequests/status
+    verbs: ["get", "patch", "update"]
   # Read-only access for Break-Glass / eBPF Honeypot policy listing
   # (GET /api/v1/breakglass/policies in breakglass_service.list_policies).
   - apiGroups: ["devsecops.licenta.ro"]
