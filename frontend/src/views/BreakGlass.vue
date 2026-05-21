@@ -7,7 +7,6 @@ import { useAuthStore } from '../store/auth'
 const notifyStore = useNotificationStore()
 const auth = useAuthStore()
 const canIssue = computed(() => auth.can('breakglass:issue'))
-const canRevokeBg = computed(() => auth.can('breakglass:revoke'))
 
 interface Session {
   jti: string
@@ -81,7 +80,6 @@ const loadingAudit = ref(false)
 const loadingAnalytics = ref(false)
 const loadingPolicies = ref(false)
 const issuing = ref(false)
-const revokingJti = ref<string | null>(null)
 
 const auditFilters = ref({ node: '', action: '', limit: 200 })
 const issuedTokenDialog = ref<{ open: boolean; session?: Session }>({ open: false })
@@ -104,7 +102,6 @@ const sessionsHeaders = [
   { title: 'Issued', key: 'issued_at' },
   { title: 'Expires', key: 'expires_at' },
   { title: 'Reason', key: 'reason' },
-  { title: 'Actions', key: 'actions', sortable: false },
 ]
 
 const nodesHeaders = [
@@ -295,33 +292,6 @@ async function issueToken() {
   }
 }
 
-async function revokeSession(s: Session) {
-  if (!confirm(`Revoci sesiunea ${s.jti.slice(0, 8)}… pe ${s.node}?`)) return
-  revokingJti.value = s.jti
-  try {
-    await api.delete(`/breakglass/sessions/${s.jti}`)
-    notifyStore.addAlert({
-      error_code: 'BREAKGLASS_SESSION_REVOKED',
-      message: `Sesiunea ${s.jti.slice(0, 8)}… a fost revocată`,
-      technical_details: 'token rămâne neutilizabil pe agent (jti blacklisted prin replay-cache)',
-      component: 'BREAKGLASS_UI',
-      trace_id: 'CLIENT',
-      action_required: '',
-      request_method: 'DELETE',
-      request_path: `/breakglass/sessions/${s.jti}`,
-      timestamp: new Date().toISOString(),
-      source: 'backend',
-      type: 'warning',
-    })
-    fetchSessions()
-    fetchAnalytics()
-  } catch {
-    // interceptor
-  } finally {
-    revokingJti.value = null
-  }
-}
-
 function copyToClipboard(text: string) {
   navigator.clipboard.writeText(text).then(() => {
     notifyStore.addAlert({
@@ -342,7 +312,7 @@ function copyToClipboard(text: string) {
 
 function copyKnockCommand(s: Session) {
   if (!s.token) return
-  const cmd = `# Pe nodul ${s.node}\nexport ZTA_TOKEN='${s.token}'\nzta-cli unlock --ttl ${s.ttl_seconds}s`
+  const cmd = `# Pe nodul ${s.node}\nexport ZTA_TOKEN='${s.token}'\nsudo -E zta-cli unlock --ttl ${s.ttl_seconds}s`
   copyToClipboard(cmd)
 }
 
@@ -645,24 +615,6 @@ onUnmounted(() => {
             </template>
             <template #item.expires_at="{ item }">
               <span class="font-mono text-caption">{{ formatTime(item.expires_at) }}</span>
-            </template>
-            <template #item.actions="{ item }">
-              <v-btn
-                v-if="item.state === 'ISSUED' && canRevokeBg"
-                size="x-small"
-                color="error"
-                variant="tonal"
-                :loading="revokingJti === item.jti"
-                @click="revokeSession(item)"
-              >
-                Revocă
-              </v-btn>
-              <v-tooltip v-else-if="item.state === 'ISSUED'" text="Necesită platform-engineer / sre-oncall." location="left">
-                <template v-slot:activator="{ props: tProps }">
-                  <span v-bind="tProps" class="text-caption text-secondary">—</span>
-                </template>
-              </v-tooltip>
-              <span v-else class="text-caption text-secondary">—</span>
             </template>
           </v-data-table>
         </v-card>

@@ -74,6 +74,8 @@ def serialize_jit_request(item: dict[str, Any]) -> dict[str, Any]:
         if token and target_ns
         else None
     )
+    requires_approval = bool(spec.get("requiresApproval", True))
+    default_state = "PENDING_APPROVAL" if requires_approval else "PENDING"
     return {
         "metadata": _metadata(item),
         "spec": spec,
@@ -84,7 +86,7 @@ def serialize_jit_request(item: dict[str, Any]) -> dict[str, Any]:
             "requestedRole": spec.get("requestedRole"),
             "duration": spec.get("duration"),
             "reason": spec.get("reason"),
-            "state": status.get("state", "PENDING"),
+            "state": status.get("state") or default_state,
             "expiresAt": status.get("expiresAt"),
             "message": status.get("message"),
             "sessionId": status.get("sessionId"),
@@ -92,6 +94,10 @@ def serialize_jit_request(item: dict[str, Any]) -> dict[str, Any]:
             "temporaryServiceAccount": sa,
             "commandToUse": command_to_use,
             "tokenIssued": bool(status.get("tokenIssued", False)),
+            "requiresApproval": requires_approval,
+            "approved": bool(status.get("approved", False)),
+            "approvedBy": status.get("approvedBy"),
+            "approvedAt": status.get("approvedAt"),
         },
     }
 

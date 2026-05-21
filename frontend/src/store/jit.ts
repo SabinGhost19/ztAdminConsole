@@ -68,6 +68,15 @@ export const useJitStore = defineStore('jit', {
       }
     },
 
+    async dismissSession(namespace: string, name: string) {
+      try {
+        await api.delete(`/jit/request/${namespace}/${name}`);
+      } catch (error) {
+        console.error('Dismiss failed', error);
+        throw error;
+      }
+    },
+
     async approveSession(namespace: string, name: string) {
       try {
         await api.post(`/jit/request/${namespace}/${name}/approve`);

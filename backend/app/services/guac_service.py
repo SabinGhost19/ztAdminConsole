@@ -53,6 +53,102 @@ async def is_healthy() -> dict[str, Any]:
         return {"reachable": False, "endpoint": url, "reason": str(exc)[:200]}
 
 
+async def list_known_vulnerabilities() -> dict[str, Any]:
+    """Enumerate every vulnerability ID that has at least one CertifyVuln
+    link in the graph, with the count of distinct packages affected.
+
+    Powers the "pick a vulnerability" dropdown in the UI — the auditor sees
+    only IDs that will actually return data, not the entire OSV catalog.
+
+    Filters out OSV's `type=novuln` "clean scan" markers (those record that
+    a package was scanned and had NO vulnerability — we don't want them
+    polluting the picker).
+    """
+    url = _endpoint()
+    if not url:
+        return {"vulnerabilities": [], "guacUnavailable": True}
+
+    query = """
+    {
+      CertifyVuln(certifyVulnSpec: {}) {
+        vulnerability { type vulnerabilityIDs { vulnerabilityID } }
+        package {
+          type
+          namespaces { namespace names { name versions { version } } }
+        }
+      }
+    }
+    """
+    try:
+        async with httpx.AsyncClient(timeout=8.0) as client:
+            resp = await client.post(url, json={"query": query})
+        if resp.status_code >= 400:
+            return {"vulnerabilities": [], "error": f"GUAC HTTP {resp.status_code}"}
+        body = resp.json()
+        if body.get("errors"):
+            return {
+                "vulnerabilities": [],
+                "error": str(body["errors"][0].get("message", "GUAC GraphQL error"))[:200],
+            }
+    except Exception as exc:
+        logger.exception(
+            "GUAC vulnerability list query failed",
+            extra={"details": {"error": str(exc)}},
+        )
+        return {"vulnerabilities": [], "error": str(exc)[:200]}
+
+    # Bucket affected packages per vuln ID. Use (type, name) so two packages
+    # with the same name but different ecosystem aren't double-counted.
+    affected: dict[str, set[tuple[str, str]]] = {}
+    for entry in ((body.get("data") or {}).get("CertifyVuln") or []):
+        vuln = entry.get("vulnerability") or {}
+        if str(vuln.get("type") or "").lower() == "novuln":
+            continue
+        pkg = entry.get("package") or {}
+        pkg_type = str(pkg.get("type") or "")
+        pkg_names: set[tuple[str, str]] = set()
+        for ns in (pkg.get("namespaces") or []):
+            for n in (ns.get("names") or []):
+                name = str(n.get("name") or "")
+                if name:
+                    pkg_names.add((pkg_type, name))
+        for vid_node in (vuln.get("vulnerabilityIDs") or []):
+            vid = str(vid_node.get("vulnerabilityID") or "").strip()
+            if not vid:
+                continue
+            affected.setdefault(vid, set()).update(pkg_names)
+
+    vulns = [
+        {
+            "id": vid,
+            "affectedPackageCount": len(pkgs),
+            # Light hint about ecosystem family — UI groups by this so
+            # GHSA/CVE/debian-cve render in separate sections.
+            "family": _family_of(vid),
+        }
+        for vid, pkgs in affected.items()
+    ]
+    vulns.sort(key=lambda v: (-v["affectedPackageCount"], v["id"]))
+    return {"vulnerabilities": vulns}
+
+
+def _family_of(vid: str) -> str:
+    v = vid.lower()
+    if v.startswith("ghsa-"):
+        return "GHSA"
+    if v.startswith("debian-cve-"):
+        return "Debian"
+    if v.startswith("rhsa-"):
+        return "RHSA"
+    if v.startswith("alas-"):
+        return "Amazon Linux"
+    if v.startswith("osv-"):
+        return "OSV"
+    if v.startswith("cve-"):
+        return "CVE"
+    return "Other"
+
+
 async def blast_radius_by_cve(cve_id: str) -> dict[str, Any]:
     """Aggregate the impact of a CVE across all images and deployments
     known to GUAC. Returns a tree-shaped payload optimised for the UI.

@@ -24,6 +24,20 @@ async def guac_health(
     return await guac_service.is_healthy()
 
 
+@router.get("/vulnerabilities", response_model=Dict[str, Any])
+async def list_vulnerabilities(
+    _identity: Identity = Depends(require_permission(perm.P_SECURITY_READ)),
+) -> Dict[str, Any]:
+    """List every vulnerability ID known to the GUAC graph.
+
+    The UI uses this to populate the "pick a vulnerability" autocomplete
+    so auditors don't have to memorise GHSA/debian-cve strings. Sorted by
+    affected-package count descending (so the highest-impact CVEs surface
+    first), with a `family` hint for grouping (`GHSA`, `Debian`, `CVE`...).
+    """
+    return await guac_service.list_known_vulnerabilities()
+
+
 @router.get("/blast-radius", response_model=Dict[str, Any])
 async def blast_radius(
     cve: str = Query(..., description="Vulnerability ID (CVE-…, GHSA-…, debian-cve-…)"),

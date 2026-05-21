@@ -158,6 +158,32 @@ async def revoke_jit_session(
     return {"status": "success", "message": f"{name} a fost revocat cu succes."}
 
 
+_DISMISSIBLE_STATES = {"EXPIRED", "REVOKED", "TAMPERED", "REJECTED", "RATE_LIMITED", "QUOTA_EXCEEDED"}
+
+
+@router.delete("/request/{namespace}/{name}")
+async def dismiss_jit_request(
+    namespace: str,
+    name: str,
+    identity: Identity = Depends(require_any_permission(perm.P_JIT_REVOKE, perm.P_JIT_READ_OWN, perm.P_JIT_READ_LIMITED)),
+):
+    """Delete a completed JIT CRD (cleanup). Non-admins can only dismiss their own
+    EXPIRED/REVOKED entries; users with P_JIT_REVOKE can dismiss any state."""
+    item = await k8s_jit_service.get_jit_request(namespace=namespace, name=name)
+    summary = item.get("summary", {}) or {}
+    state = str(summary.get("state") or "").upper()
+    owner = str(summary.get("developerId") or "").strip().lower()
+    is_admin = perm.P_JIT_REVOKE in identity.permissions
+    is_owner = bool(owner) and owner == (identity.email or "").strip().lower()
+    if not is_admin:
+        if not is_owner:
+            raise HTTPException(status_code=403, detail="Not the owner of this JIT request.")
+        if state not in _DISMISSIBLE_STATES:
+            raise HTTPException(status_code=409, detail=f"Only completed sessions can be dismissed (current: {state}).")
+    await jit_service.revoke_jit_access(namespace, name)
+    return {"status": "success", "message": f"{name} a fost șters din listă."}
+
+
 @router.get("/sessions/aggregate", response_model=Dict[str, Any])
 async def aggregate_jit_sessions(
     request: Request,

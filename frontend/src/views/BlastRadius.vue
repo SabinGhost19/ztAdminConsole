@@ -43,6 +43,29 @@ const inClusterCount = computed(
 
 const guacHealth = ref<{ reachable: boolean; endpoint?: string; reason?: string } | null>(null)
 
+// Known vulnerabilities loaded once for the picker. Each item carries the
+// raw ID, the family (GHSA / CVE / Debian / ...) and how many distinct
+// packages it touches — that count is the most useful sort key.
+interface KnownVuln {
+  id: string
+  affectedPackageCount: number
+  family: string
+}
+const knownVulns = ref<KnownVuln[]>([])
+const knownVulnsLoading = ref(false)
+
+// Vuetify v-combobox needs (title, value) items. `props` carries the raw
+// vuln object so the template can show the family + package count chips.
+const vulnPickerItems = computed(() =>
+  knownVulns.value.map(v => ({
+    title: v.id,
+    value: v.id,
+    props: { subtitle: `${v.family} · ${v.affectedPackageCount} pachet(e)` },
+    family: v.family,
+    affectedPackageCount: v.affectedPackageCount,
+  })),
+)
+
 async function probeGuac() {
   try {
     const { data } = await api.get('/guac/health')
@@ -52,8 +75,34 @@ async function probeGuac() {
   }
 }
 
+async function loadKnownVulnerabilities() {
+  knownVulnsLoading.value = true
+  try {
+    const { data } = await api.get<{ vulnerabilities: KnownVuln[] }>('/guac/vulnerabilities')
+    knownVulns.value = data.vulnerabilities ?? []
+  } catch {
+    // Fail silently — the free-text input still works, picker just stays empty.
+    knownVulns.value = []
+  } finally {
+    knownVulnsLoading.value = false
+  }
+}
+
+// v-combobox model: when the user picks an item the model is set to the
+// item object `{ title, value, ... }`; when they type free-text it's a
+// plain string. Normalise both to a string before validation.
+function normaliseCveModel(v: unknown): string {
+  if (typeof v === 'string') return v
+  if (v && typeof v === 'object') {
+    const obj = v as Record<string, unknown>
+    if (typeof obj.value === 'string') return obj.value
+    if (typeof obj.title === 'string') return obj.title
+  }
+  return ''
+}
+
 async function runQuery() {
-  const raw = state.cve.trim()
+  const raw = normaliseCveModel(state.cve).trim()
   // GUAC stores identifiers in three shapes coming from osv-certifier:
   // "cve-2024-1234", "ghsa-xxxx-xxxx-xxxx", "debian-cve-2024-1234".
   // Accept any of these (case-insensitive); GUAC normalises to lowercase.
@@ -87,6 +136,7 @@ function onNodeSelected(data: BlastNodeData) {
 }
 
 probeGuac()
+loadKnownVulnerabilities()
 </script>
 
 <template>
@@ -113,15 +163,51 @@ probeGuac()
 
     <v-card variant="flat" class="gc-border mb-4" style="border: 1px solid rgba(var(--v-theme-on-surface), 0.12)">
       <v-card-text class="d-flex align-center ga-3">
-        <v-text-field
+        <v-combobox
           v-model="state.cve"
+          :items="vulnPickerItems"
+          :loading="knownVulnsLoading"
           label="Vulnerability Identifier"
-          placeholder="CVE-…, GHSA-…, debian-cve-…"
+          placeholder="Selectează din graf sau scrie CVE-…, GHSA-…, debian-cve-…"
           variant="outlined"
           density="comfortable"
           hide-details
+          item-title="title"
+          item-value="value"
+          :return-object="false"
+          clearable
           @keyup.enter="runQuery"
-        />
+        >
+          <template #item="{ props: itemProps, item }">
+            <v-list-item v-bind="itemProps">
+              <template #prepend>
+                <v-chip
+                  size="x-small"
+                  variant="tonal"
+                  :color="item.raw.family === 'GHSA' ? 'purple'
+                    : item.raw.family === 'Debian' ? 'amber'
+                    : item.raw.family === 'CVE' ? 'red'
+                    : 'grey'"
+                  class="me-2"
+                >
+                  {{ item.raw.family }}
+                </v-chip>
+              </template>
+              <template #append>
+                <span class="text-caption text-medium-emphasis">
+                  {{ item.raw.affectedPackageCount }} pkg
+                </span>
+              </template>
+            </v-list-item>
+          </template>
+          <template #no-data>
+            <v-list-item>
+              <v-list-item-subtitle class="text-medium-emphasis">
+                Niciun ID din graf — scrie unul manual.
+              </v-list-item-subtitle>
+            </v-list-item>
+          </template>
+        </v-combobox>
         <v-btn
           color="primary"
           :loading="state.loading"
