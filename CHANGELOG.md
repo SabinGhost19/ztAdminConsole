@@ -1,3 +1,10 @@
+# [1.12.0](https://github.com/SabinGhost19/ztAdminConsole/compare/v1.11.0...v1.12.0) (2026-05-21)
+
+
+### Features
+
+* **jit:** manual approval workflow + real-time SSE stream ([591573e](https://github.com/SabinGhost19/ztAdminConsole/commit/591573ea858f9c8f852d06b2f90762870adec6eb))
+
 # [1.11.0](https://github.com/SabinGhost19/ztAdminConsole/compare/v1.10.5...v1.11.0) (2026-05-21)
 
 
