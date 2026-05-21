@@ -26,7 +26,7 @@ async def guac_health(
 
 @router.get("/blast-radius", response_model=Dict[str, Any])
 async def blast_radius(
-    cve: str = Query(..., description="Identificator CVE (ex: CVE-2024-1234)"),
+    cve: str = Query(..., description="Vulnerability ID (CVE-…, GHSA-…, debian-cve-…)"),
     enrich_cluster: bool = Query(True, description="Atașează context K8s din ZTA list"),
     _identity: Identity = Depends(require_permission(perm.P_SECURITY_READ)),
 ) -> Dict[str, Any]:
@@ -37,8 +37,15 @@ async def blast_radius(
     `vulnerablePackages` (possibly empty) plus an `error` or
     `guacUnavailable` flag so the UI can render a friendly empty state.
     """
-    if not cve or not cve.upper().startswith("CVE-"):
-        raise HTTPException(status_code=400, detail="cve must look like CVE-YYYY-NNNN")
+    # osv-certifier emits identifiers in three shapes; accept all of them.
+    # GUAC stores them lowercased internally, so the regex is lenient
+    # on case and the service layer downcases before the GraphQL call.
+    import re
+    if not cve or not re.match(r"^(cve|ghsa|debian-cve|osv|rhsa|alas|gms)-", cve.strip(), re.IGNORECASE):
+        raise HTTPException(
+            status_code=400,
+            detail="vuln id must look like CVE-…, GHSA-…, or debian-cve-…",
+        )
 
     result = await guac_service.blast_radius_by_cve(cve.strip())
     if enrich_cluster:
