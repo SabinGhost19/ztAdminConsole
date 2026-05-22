@@ -66,14 +66,14 @@ function splitImageRef(image: string): { repo: string; digest: string } {
   return { repo: image, digest: '' }
 }
 
-// Edge color mirrors the receiving node's verdict. Latent paths are dashed
-// gray so the eye routes around them when scanning for trouble.
+// The flow is Google Blue regardless of verdict — state is carried by the
+// node accent rail, not by the edge colour. Latent paths are drawn in a
+// muted gray and dashed so the eye routes around inactive branches.
+const FLOW_BLUE = '#1a73e8'   // Google Blue 600
+const FLOW_GRAY = '#bdc1c6'   // Google Gray 400
+
 function edgeColor(verdict: Verdict): string {
-  switch (verdict) {
-    case 'critical': return '#ef5350'
-    case 'exempted': return '#66bb6a'
-    case 'latent':   return '#9e9e9e'
-  }
+  return verdict === 'latent' ? FLOW_GRAY : FLOW_BLUE
 }
 
 export interface BuildGraphArgs {

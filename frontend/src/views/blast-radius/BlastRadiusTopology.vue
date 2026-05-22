@@ -280,7 +280,7 @@ const showNoCveEmpty = computed(() =>
           :variant="BackgroundVariant.Dots"
           :gap="24"
           :size="1.2"
-          pattern-color="rgba(255, 255, 255, 0.06)"
+          pattern-color="rgba(60, 64, 67, 0.16)"
         />
         <Controls
           :show-zoom="false"
@@ -292,16 +292,16 @@ const showNoCveEmpty = computed(() =>
           pannable
           zoomable
           :node-stroke-width="2"
-          :mask-color="'rgba(14, 17, 22, 0.65)'"
+          :mask-color="'rgba(241, 243, 244, 0.7)'"
           :node-color="(n) => {
             const v = (n.data as BlastNodeData | undefined)
-            if (!v) return 'rgba(255,255,255,0.4)'
+            if (!v) return '#9aa0a6'
             if ('verdict' in v) {
-              if (v.verdict === 'critical') return '#f87171'
-              if (v.verdict === 'exempted') return '#34d399'
-              return '#71717a'
+              if (v.verdict === 'critical') return '#d93025'
+              if (v.verdict === 'exempted') return '#1e8e3e'
+              return '#9aa0a6'
             }
-            return '#f87171'
+            return '#d93025'
           }"
         />
       </VueFlow>

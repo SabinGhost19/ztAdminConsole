@@ -1,10 +1,10 @@
 /*
  * Blast Radius topology — design system tokens and component styles.
  *
- * Aesthetic target: Google Cloud Console / Material 3, dark-surface
- * variant. The objective is "high-density, low-clutter": typography
- * carries the information, accents communicate state, chrome is
- * intentionally muted.
+ * Aesthetic target: Google Cloud Console light theme. The objective is
+ * "high-density, low-clutter": typography carries the information, the
+ * flow (edges) is Google Blue, state is carried by a muted accent rail,
+ * and chrome is intentionally neutral gray.
  *
  * Token naming follows Material 3 conventions where applicable.
  */
@@ -30,32 +30,44 @@
 }
 
 :root {
-  /* Semantic accents — only three, never overload. */
-  --br-accent-critical: #f87171;   /* rose 400 */
-  --br-accent-exempted: #34d399;   /* emerald 400 */
-  --br-accent-latent:   #71717a;   /* zinc 500 */
-
-  /* Surface ramp (Material 3 dark). */
-  --br-surface:           #0e1116;
-  --br-surface-1:         #14181f;
-  --br-surface-2:         #1a1f27;
-  --br-surface-overlay:   #1f2530;
-  --br-outline:           rgba(255, 255, 255, 0.10);
-  --br-outline-strong:    rgba(255, 255, 255, 0.16);
-  --br-outline-focus:     #60a5fa;
-
-  --br-text:              #e4e4e7;
-  --br-text-secondary:    #a1a1aa;
-  --br-text-tertiary:     #71717a;
-
-  /* Material 3 elevation tokens. Two shadows stacked = perceptible
-   * depth without "halo" artefacts on dark surfaces.
+  /* Google Cloud Console palette.
+   *
+   * The dominant surface is neutral gray; the flow (edges) is Google
+   * Blue 600; state is carried only by a muted accent rail, never by a
+   * saturated fill. This keeps the canvas calm and "enterprise" rather
+   * than alarm-coloured.
    */
-  --br-elevation-1: 0 1px 2px rgba(0, 0, 0, 0.30);
-  --br-elevation-3: 0 1px 3px rgba(0, 0, 0, 0.40),
-                    0 4px 8px rgba(0, 0, 0, 0.32);
-  --br-elevation-4: 0 1px 3px rgba(0, 0, 0, 0.45),
-                    0 10px 24px rgba(0, 0, 0, 0.36);
+
+  /* Primary — Google Blue. Used for the flow lines and active controls. */
+  --br-blue:              #1a73e8;   /* Blue 600 */
+  --br-blue-strong:       #1967d2;   /* Blue 700 */
+  --br-blue-tint:         #e8f0fe;   /* Blue 50  */
+
+  /* Muted semantic accents (rail only). Google red is used sparingly. */
+  --br-accent-critical:   #d93025;   /* Red 600   */
+  --br-accent-exempted:   #1e8e3e;   /* Green 700 */
+  --br-accent-latent:     #9aa0a6;   /* Gray 500  */
+
+  /* Surface ramp — Google grays. */
+  --br-surface:           #f8f9fa;   /* Gray 50  — canvas background */
+  --br-surface-1:         #ffffff;   /* white    — nodes, toolbar     */
+  --br-surface-2:         #f1f3f4;   /* Gray 100 — hover              */
+  --br-surface-overlay:   #ffffff;   /* white    — floating overlay   */
+  --br-outline:           #dadce0;   /* Gray 300 — standard border    */
+  --br-outline-strong:    #bdc1c6;   /* Gray 400 — emphasised border  */
+  --br-outline-focus:     #1a73e8;   /* Blue 600 — focus ring         */
+
+  --br-text:              #202124;   /* Gray 900 — primary text   */
+  --br-text-secondary:    #5f6368;   /* Gray 700 — secondary text */
+  --br-text-tertiary:     #80868b;   /* Gray 600 — tertiary       */
+
+  /* Google elevation shadows (rgba(60,64,67) — the Console shadow tint). */
+  --br-elevation-1: 0 1px 2px rgba(60, 64, 67, 0.30),
+                    0 1px 3px 1px rgba(60, 64, 67, 0.15);
+  --br-elevation-3: 0 1px 3px rgba(60, 64, 67, 0.30),
+                    0 4px 8px 3px rgba(60, 64, 67, 0.15);
+  --br-elevation-4: 0 2px 6px 2px rgba(60, 64, 67, 0.15),
+                    0 8px 24px 4px rgba(60, 64, 67, 0.15);
 }
 
 /* ----------------------------------------------------------------------
@@ -91,7 +103,7 @@
   background: var(--br-surface-2);
 }
 .br-canvas .vue-flow__minimap {
-  background: rgba(20, 24, 31, 0.92);
+  background: rgba(255, 255, 255, 0.92);
   border: 1px solid var(--br-outline);
   border-radius: 8px;
   box-shadow: var(--br-elevation-1);
@@ -147,8 +159,8 @@
   outline-offset: 2px;
 }
 .br-icon-btn--active {
-  background: rgba(96, 165, 250, 0.16);
-  color: #93c5fd;
+  background: var(--br-blue-tint);
+  color: var(--br-blue);
 }
 
 /* Chip filter (GCP pill style). */
@@ -173,9 +185,9 @@
   color: var(--br-text);
 }
 .br-chip--active {
-  background: rgba(96, 165, 250, 0.12);
-  border-color: rgba(96, 165, 250, 0.5);
-  color: #bfdbfe;
+  background: var(--br-blue-tint);
+  border-color: var(--br-blue);
+  color: var(--br-blue-strong);
 }
 
 .br-counter {
@@ -431,11 +443,11 @@
 }
 .br-overlay__action:hover { background: var(--br-surface-2); }
 .br-overlay__action--primary {
-  background: #2563eb;
-  border-color: #2563eb;
+  background: var(--br-blue);
+  border-color: var(--br-blue);
   color: white;
 }
-.br-overlay__action--primary:hover { background: #1d4ed8; }
+.br-overlay__action--primary:hover { background: var(--br-blue-strong); }
 
 .br-overlay__chip {
   display: inline-flex;
@@ -446,10 +458,10 @@
   font-size: 11px;
   font-weight: 500;
 }
-.br-overlay__chip--critical { background: rgba(248, 113, 113, 0.16); color: #fca5a5; }
-.br-overlay__chip--exempted { background: rgba(52, 211, 153, 0.16); color: #6ee7b7; }
-.br-overlay__chip--latent   { background: rgba(113, 113, 122, 0.20); color: var(--br-text-secondary); }
-.br-overlay__chip--neutral  { background: rgba(255, 255, 255, 0.06); color: var(--br-text-secondary); }
+.br-overlay__chip--critical { background: #fce8e6; color: #c5221f; }
+.br-overlay__chip--exempted { background: #e6f4ea; color: #137333; }
+.br-overlay__chip--latent   { background: var(--br-surface-2); color: var(--br-text-secondary); }
+.br-overlay__chip--neutral  { background: var(--br-surface-2); color: var(--br-text-secondary); }
 
 /* Floating-UI arrow */
 .br-overlay__arrow {
@@ -499,10 +511,10 @@
   padding: 0 18px;
   border-radius: 18px;
   border: none;
-  background: #2563eb;
+  background: var(--br-blue);
   color: white;
   font-size: 13px;
   font-weight: 500;
   cursor: pointer;
 }
-.br-empty__action:hover { background: #1d4ed8; }
+.br-empty__action:hover { background: var(--br-blue-strong); }
