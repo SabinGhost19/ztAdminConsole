@@ -280,8 +280,29 @@ class BreakGlassService:
             sessions = list(self._sessions.values())
             audit = list(self._audit)
             heartbeats = list(self._heartbeats.values())
-        denied = sum(1 for ev in audit if ev.get("action") == "denied")
-        allowed = sum(1 for ev in audit if ev.get("action") == "allowed")
+        # Action codes emitted by the eBPF honeypot agent
+        # (bpf/honeypot.bpf.c -> internal/audit/audit.go::actionString):
+        #   "allowed"               — protected read by an authorized PID
+        #   "denied"                — protected read blocked with -EACCES
+        #   "skip_critical_runtime" — k3s/kubelet/containerd/etcd/... read,
+        #                             intentionally let through by Guard #1
+        #   "skip_no_loginuid"      — non-interactive daemon read, let
+        #                             through by Guard #2 (enforce_mode>=ssh_only)
+        #   "skip_no_tty"           — interactive but no controlling TTY,
+        #                             let through in ssh_strict mode
+        #
+        # We MUST NOT count skip_* as "denied" (would inflate the attack
+        # graph) nor as "allowed" (would hide true admin reads). They get
+        # their own breakdown.
+        by_action: Dict[str, int] = {}
+        for ev in audit:
+            a = ev.get("action") or "unknown"
+            by_action[a] = by_action.get(a, 0) + 1
+
+        denied = by_action.get("denied", 0)
+        allowed = by_action.get("allowed", 0)
+        skipped_total = sum(v for k, v in by_action.items() if k.startswith("skip_"))
+
         active = sum(1 for s in sessions if s.refreshed_state() == "ISSUED")
         revoked = sum(1 for s in sessions if s.state == "REVOKED")
         expired = sum(1 for s in sessions if s.refreshed_state() == "EXPIRED")
@@ -300,8 +321,10 @@ class BreakGlassService:
             "audit": {
                 "denied": denied,
                 "allowed": allowed,
+                "skipped": skipped_total,
                 "total": len(audit),
                 "denied_per_node": per_node_denied,
+                "by_action": by_action,
             },
             "agents": {
                 "total": len(heartbeats),

@@ -176,15 +176,25 @@ async def ingest_heartbeat(payload: Dict[str, Any], request: Request) -> Dict[st
     node = payload.get("node") or request.headers.get("X-Forwarded-Node", "unknown")
     policies = payload.get("policies_loaded", "?")
     mode = payload.get("mode", "?")
+    # M6: enforcement scope of the LSM hook (ssh_only|ssh_strict|all).
+    # Reported by the agent so operators can verify per-node configuration
+    # from the dashboard. Absent on pre-M6 agents → "unknown".
+    enforce_mode = payload.get("enforce_mode", "unknown")
     version = payload.get("version", "?")
     fwd = (payload.get("audit_forwarder") or {})
     fwd_url = fwd.get("url", "disabled")
     fwd_dropped = fwd.get("dropped", 0)
     fwd_err = fwd.get("last_err", "")
     logger.info(
-        "heartbeat: node=%s mode=%s policies=%s version=%s forwarder_url=%s dropped=%s last_err=%r",
-        node, mode, policies, version, fwd_url, fwd_dropped, fwd_err,
+        "heartbeat: node=%s mode=%s enforce=%s policies=%s version=%s forwarder_url=%s dropped=%s last_err=%r",
+        node, mode, enforce_mode, policies, version, fwd_url, fwd_dropped, fwd_err,
     )
+    if enforce_mode == "all":
+        logger.warning(
+            "heartbeat: node=%s is running with enforce_mode=all — this is UNSAFE on k8s nodes "
+            "and the agent can interfere with non-runtime daemons. Switch to ssh_only.",
+            node,
+        )
     if fwd_dropped and int(fwd_dropped) > 0:
         logger.warning("heartbeat: node=%s has %s dropped audit events", node, fwd_dropped)
     get_service().ingest_heartbeat(payload)

@@ -33,6 +33,9 @@ interface NodeStatus {
   version: string
   started_at: string
   mode: string
+  // M6: LSM enforcement scope reported by the agent (ssh_only|ssh_strict|all).
+  // Absent on pre-M6 agents.
+  enforce_mode?: string
   protected_paths: string[]
   authorized_pids: AuthorizedPID[]
   mounted_honeypots: string[]
@@ -108,6 +111,7 @@ const nodesHeaders = [
   { title: 'Health', key: 'healthy' },
   { title: 'Node', key: 'node' },
   { title: 'Mode', key: 'mode' },
+  { title: 'Enforce', key: 'enforce_mode' },
   { title: 'Protected paths', key: 'protected_paths' },
   { title: 'Authorized PIDs', key: 'authorized_pids' },
   { title: 'Honeypots mounted', key: 'mounted_honeypots' },
@@ -329,14 +333,39 @@ function stateColor(state: string) {
   }
 }
 
+// Action codes mirror the eBPF agent's actionString() in
+// ebpf-honeypot/internal/audit/audit.go. The skip_* family are
+// informational — the kernel let the read through deliberately because
+// the caller is either a critical runtime process (k3s/kubelet/etc.)
+// or not part of an interactive login session (enforce_mode>=ssh_only).
 function actionColor(action?: string) {
   switch (action) {
     case 'denied':
       return 'error'
     case 'allowed':
       return 'success'
+    case 'skip_critical_runtime':
+      return 'grey'
+    case 'skip_no_loginuid':
+    case 'skip_no_tty':
+      return 'info'
     default:
       return 'primary'
+  }
+}
+
+// Pretty enforce_mode chip color: ssh_only/ssh_strict are safe (green/blue),
+// "all" is a misconfiguration on k8s nodes and must stand out (red).
+function enforceModeColor(mode?: string) {
+  switch (mode) {
+    case 'ssh_only':
+      return 'success'
+    case 'ssh_strict':
+      return 'info'
+    case 'all':
+      return 'error'
+    default:
+      return 'grey'
   }
 }
 
@@ -644,6 +673,21 @@ onUnmounted(() => {
                 {{ item.mode || '—' }}
               </v-chip>
             </template>
+            <template #item.enforce_mode="{ item }">
+              <v-chip
+                size="x-small"
+                :color="enforceModeColor(item.enforce_mode)"
+                variant="tonal"
+              >
+                {{ item.enforce_mode || 'unknown' }}
+              </v-chip>
+              <v-tooltip v-if="item.enforce_mode === 'all'" location="bottom">
+                <template #activator="{ props }">
+                  <v-icon v-bind="props" size="x-small" color="error" class="ml-1">mdi-alert</v-icon>
+                </template>
+                <span>enforce_mode=all is UNSAFE on k8s nodes — the LSM hook may interfere with non-runtime daemons. Switch to ssh_only.</span>
+              </v-tooltip>
+            </template>
             <template #item.protected_paths="{ item }">
               <span class="text-caption">{{ item.protected_paths?.length || 0 }}</span>
               <v-tooltip v-if="item.protected_paths?.length" location="bottom">
@@ -705,7 +749,7 @@ onUnmounted(() => {
             />
             <v-select
               v-model="auditFilters.action"
-              :items="['', 'denied', 'allowed']"
+              :items="['', 'allowed', 'denied', 'skip_critical_runtime', 'skip_no_loginuid', 'skip_no_tty']"
               label="Filtru acțiune"
               variant="outlined"
               density="compact"
