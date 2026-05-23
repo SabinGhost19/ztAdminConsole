@@ -1,3 +1,10 @@
+## [1.13.1](https://github.com/SabinGhost19/ztAdminConsole/compare/v1.13.0...v1.13.1) (2026-05-23)
+
+
+### Bug Fixes
+
+* **secrets,networking,identity:** unblock ESO chain + add FreeIPA pod ([3247d41](https://github.com/SabinGhost19/ztAdminConsole/commit/3247d41bbadc21738b5a271eb5c10f96acf3e341))
+
 # [1.13.0](https://github.com/SabinGhost19/ztAdminConsole/compare/v1.12.0...v1.13.0) (2026-05-21)
 
 
