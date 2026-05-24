@@ -552,75 +552,129 @@ function submitDeclaration() {
     <v-row>
       <v-col cols="12" lg="4">
         <v-card class="gc-border mb-4" style="border: 1px solid rgba(var(--v-theme-on-surface), 0.12)" flat>
-          <v-card-title class="font-weight-medium pb-2 text-primary">Existing Applications</v-card-title>
+          <v-card-title class="font-weight-medium pb-2 text-primary d-flex align-center justify-space-between">
+            <span>Existing Applications</span>
+            <v-chip size="x-small" variant="tonal" color="primary">
+              {{ applications.length }}
+            </v-chip>
+          </v-card-title>
           <v-card-text>
-            <v-select
+            <v-autocomplete
               v-model="selectedApplication"
-              :items="applicationOptions"
-              label="Inspect integrity"
+              :items="applications"
+              :item-title="(a: any) => a.metadata.name"
+              :item-value="(a: any) => `${a.metadata.namespace}/${a.metadata.name}`"
+              label="Select a ZTA application"
+              placeholder="Type to filter…"
               variant="outlined"
-              density="compact"
+              density="comfortable"
               :loading="isLoadingApplications"
-              class="mb-4"
-            ></v-select>
+              prepend-inner-icon="mdi-shield-search"
+              menu-icon="mdi-chevron-down"
+              clearable
+              hide-details
+              :menu-props="{ maxHeight: 480 }"
+            >
+              <template v-slot:item="{ props: itemProps, item }">
+                <v-list-item
+                  v-bind="itemProps"
+                  class="zta-option py-2"
+                  :title="undefined"
+                  :subtitle="undefined"
+                >
+                  <template v-slot:prepend>
+                    <v-avatar :color="applicationSeverity(item.raw)" size="34" class="me-1">
+                      <v-icon size="18" color="white">{{ applicationIcon(item.raw) }}</v-icon>
+                    </v-avatar>
+                  </template>
 
-            <v-list lines="two">
-              <v-list-item v-for="app in applications" :key="app.metadata.uid || app.metadata.name">
-                <template v-slot:prepend>
-                  <v-avatar :color="applicationSeverity(app)" size="28">
-                    <v-icon size="16">{{ applicationIcon(app) }}</v-icon>
-                  </v-avatar>
-                </template>
-                <v-list-item-title class="d-flex align-center ga-2 flex-wrap">
-                  <span>{{ app.metadata.name }}</span>
-                  <v-chip :color="applicationSeverity(app)" size="x-small" variant="tonal">{{ applicationBadge(app) }}</v-chip>
-                  <v-chip
-                    v-if="guacIngestionSeverity(app)"
-                    :color="guacIngestionSeverity(app) || undefined"
-                    size="x-small"
-                    variant="tonal"
-                    prepend-icon="mdi-graph-outline"
+                  <div class="d-flex align-center ga-2 flex-wrap zta-option__title">
+                    <span class="font-weight-medium text-body-2">{{ item.raw.metadata.name }}</span>
+                    <v-chip
+                      :color="applicationSeverity(item.raw)"
+                      size="x-small"
+                      variant="tonal"
+                      density="comfortable"
+                    >
+                      {{ applicationBadge(item.raw) }}
+                    </v-chip>
+                    <v-chip
+                      v-if="guacIngestionSeverity(item.raw)"
+                      :color="guacIngestionSeverity(item.raw) || undefined"
+                      size="x-small"
+                      variant="tonal"
+                      prepend-icon="mdi-graph-outline"
+                    >
+                      {{ guacIngestionLabel(item.raw) }}
+                    </v-chip>
+                    <v-chip
+                      v-if="(item.raw.summary?.vex?.exemptedCount || 0) > 0"
+                      color="success"
+                      size="x-small"
+                      variant="tonal"
+                      prepend-icon="mdi-shield-check-outline"
+                    >
+                      VEX {{ item.raw.summary.vex.exemptedCount }}
+                    </v-chip>
+                    <v-chip
+                      v-if="item.raw.summary?.merkle?.rfc6962"
+                      color="primary"
+                      size="x-small"
+                      variant="tonal"
+                      prepend-icon="mdi-merge"
+                      title="Merkle tree uses RFC 6962 domain separation"
+                    >
+                      Merkle v{{ item.raw.summary.merkle.version }}
+                    </v-chip>
+                  </div>
+
+                  <div class="text-caption text-secondary mt-1">
+                    <span class="font-mono">{{ item.raw.summary.securityPolicyRef || 'no policy' }}</span>
+                    <span class="mx-1">•</span>
+                    <span>{{ item.raw.summary.securityState || 'Pending' }}</span>
+                    <span class="ms-2 text-medium-emphasis font-mono">{{ item.raw.metadata.namespace }}</span>
+                  </div>
+
+                  <div
+                    v-if="item.raw.summary.isAuditAlert"
+                    class="text-caption text-warning mt-1 d-flex align-center ga-1"
                   >
-                    <span>{{ guacIngestionLabel(app) }}</span>
-                    <v-progress-circular
-                      v-if="(app.summary?.guacIngestion?.status || '').toLowerCase() === 'inprogress'"
-                      indeterminate
-                      size="10"
-                      width="2"
-                      class="ms-1"
-                    />
-                  </v-chip>
-                  <v-chip
-                    v-if="(app.summary?.vex?.exemptedCount || 0) > 0"
-                    color="success"
-                    size="x-small"
-                    variant="tonal"
-                    prepend-icon="mdi-shield-check-outline"
-                  >
-                    VEX {{ app.summary.vex.exemptedCount }}
-                  </v-chip>
-                  <v-chip
-                    v-if="app.summary?.merkle?.rfc6962"
-                    color="primary"
-                    size="x-small"
-                    variant="tonal"
-                    prepend-icon="mdi-merge"
-                    title="Merkle tree uses RFC 6962 domain separation (0x00 leaf / 0x01 node)"
-                  >
-                    Merkle v{{ app.summary.merkle.version }}
-                  </v-chip>
-                </v-list-item-title>
-                <v-list-item-subtitle>
-                  {{ app.summary.securityPolicyRef }} • {{ app.summary.securityState }}
-                  <div v-if="app.summary.isAuditAlert" class="text-warning font-weight-medium mt-1">
+                    <v-icon size="x-small">mdi-shield-alert-outline</v-icon>
                     Manifest Hash Drift Detected — Allowed due to Audit Policy
                   </div>
-                  <div v-if="app.summary.lastError" class="text-error font-weight-medium mt-1">
-                    {{ app.summary.lastErrorSummary || app.summary.lastError }}
+                  <div
+                    v-else-if="item.raw.summary.lastError"
+                    class="text-caption text-error mt-1 d-flex align-center ga-1"
+                  >
+                    <v-icon size="x-small">mdi-alert-octagon-outline</v-icon>
+                    {{ item.raw.summary.lastErrorSummary || item.raw.summary.lastError }}
                   </div>
-                </v-list-item-subtitle>
-              </v-list-item>
-            </v-list>
+                </v-list-item>
+              </template>
+
+              <template v-slot:selection="{ item }">
+                <span class="d-flex align-center ga-2">
+                  <v-icon :color="applicationSeverity(item.raw)" size="18">
+                    {{ applicationIcon(item.raw) }}
+                  </v-icon>
+                  <span class="font-weight-medium">{{ item.raw.metadata.name }}</span>
+                  <v-chip :color="applicationSeverity(item.raw)" size="x-small" variant="tonal">
+                    {{ applicationBadge(item.raw) }}
+                  </v-chip>
+                </span>
+              </template>
+
+              <template v-slot:no-data>
+                <div class="px-4 py-3 text-caption text-secondary">
+                  {{ isLoadingApplications ? 'Loading applications…' : 'No ZTA applications found.' }}
+                </div>
+              </template>
+            </v-autocomplete>
+
+            <div v-if="!selectedApplication" class="text-caption text-secondary mt-3 d-flex align-start ga-2">
+              <v-icon size="small" color="primary">mdi-information-outline</v-icon>
+              <span>Pick an application above to inspect its integrity ledger, reconcile flow, and supply-chain forensics.</span>
+            </div>
           </v-card-text>
         </v-card>
       </v-col>
@@ -1316,5 +1370,30 @@ function submitDeclaration() {
   .span-5-lg {
     grid-column: span 5;
   }
+}
+
+/* --- ZTA dropdown option (rich list item) --- */
+:deep(.zta-option) {
+  border-bottom: 1px solid rgba(var(--v-theme-on-surface), 0.06);
+  min-height: 64px;
+  padding-top: 8px;
+  padding-bottom: 8px;
+}
+:deep(.zta-option:last-child) {
+  border-bottom: none;
+}
+:deep(.zta-option:hover) {
+  background: rgba(var(--v-theme-primary), 0.06);
+}
+:deep(.zta-option .v-list-item__prepend) {
+  align-self: flex-start;
+  padding-top: 2px;
+}
+:deep(.zta-option__title) {
+  line-height: 1.3;
+}
+.font-mono {
+  font-family: 'Roboto Mono', 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 0.78rem;
 }
 </style>

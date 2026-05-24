@@ -69,8 +69,8 @@ function splitImageRef(image: string): { repo: string; digest: string } {
 // The flow is Google Blue regardless of verdict — state is carried by the
 // node accent rail, not by the edge colour. Latent paths are drawn in a
 // muted gray and dashed so the eye routes around inactive branches.
-const FLOW_BLUE = '#1a73e8'   // Google Blue 600
-const FLOW_GRAY = '#bdc1c6'   // Google Gray 400
+const FLOW_BLUE = '#8ab4f8'   // Google Blue 300 — flow colour on dark
+const FLOW_GRAY = '#5f6368'   // Google Gray 700 — muted latent on dark
 
 function edgeColor(verdict: Verdict): string {
   return verdict === 'latent' ? FLOW_GRAY : FLOW_BLUE
