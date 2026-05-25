@@ -83,7 +83,6 @@ function toggleStage(id: string) {
           <v-icon size="14" :class="{ spin: retrying }">mdi-refresh</v-icon>
           <span>Re-Evaluate</span>
         </button>
-        <span class="gh-phase">{{ flow?.phase || 'Pending' }}</span>
       </div>
     </header>
 
@@ -180,7 +179,7 @@ function toggleStage(id: string) {
   --gh-info: #58a6ff;
   --gh-skipped: #8b949e;
 
-  background: var(--gh-canvas);
+  background: rgb(var(--v-theme-surface));
   border: 1px solid var(--gh-border);
   border-radius: 12px;
   padding: 16px 18px;
@@ -305,7 +304,7 @@ function toggleStage(id: string) {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: var(--gh-canvas);
+  background: rgb(var(--v-theme-surface));
   border: 2px solid var(--gh-border);
   color: var(--gh-fg-muted);
   flex-shrink: 0;
@@ -314,7 +313,7 @@ function toggleStage(id: string) {
 .gh-stage-icon.tone-error   { color: var(--gh-error);   border-color: var(--gh-error); }
 .gh-stage-icon.tone-warning { color: var(--gh-warning); border-color: var(--gh-warning); }
 .gh-stage-icon.tone-running { color: var(--gh-info);    border-color: var(--gh-info); }
-.gh-stage-icon.tone-skipped { color: var(--gh-skipped); border-color: var(--gh-border); background: var(--gh-canvas); }
+.gh-stage-icon.tone-skipped { color: var(--gh-skipped); border-color: var(--gh-border); background: rgb(var(--v-theme-surface)); }
 .gh-stage-icon.tone-pending { color: var(--gh-fg-muted); border-color: var(--gh-border); }
 
 .gh-stage-body {
@@ -385,7 +384,7 @@ function toggleStage(id: string) {
 .gh-log {
   display: flex;
   flex-direction: column;
-  background: var(--gh-canvas);
+  background: rgb(var(--v-theme-surface));
   border: 1px solid var(--gh-border-muted);
   border-radius: 6px;
   overflow: hidden;

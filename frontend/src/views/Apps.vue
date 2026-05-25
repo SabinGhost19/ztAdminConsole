@@ -230,6 +230,29 @@ async function _pollOnce() {
       stopIntegrityPolling()
       return
     }
+  } catch (exc: any) {
+    // ZTA disappeared (deleted while polling). Stop, clear, notify the
+    // user once. Avoids the "404 spam" loop where polling kept hitting
+    // a deleted resource.
+    const status = exc?.response?.status
+    if (status === 404 && selectedApplication.value === currentApp) {
+      stopIntegrityPolling()
+      selectedApplication.value = ''
+      integrityDetails.value = null
+      kopfEvents.value = []
+      notifyStore.addAlert({
+        error_code: 'ZTA_DELETED',
+        message: `Aplicația ${currentApp} a fost ștearsă din cluster. Vizualizarea s-a închis automat.`,
+        technical_details: String(exc?.message || ''),
+        component: 'INTEGRITY_POLLING',
+        trace_id: `DEL-${Math.random().toString(36).substring(2)}`,
+        action_required: 'Selectați altă aplicație din listă sau aplicați un manifest nou.',
+        type: 'warning',
+      })
+      return
+    }
+    // Other errors: let them bubble up to the global axios interceptor.
+    throw exc
   } finally {
     pollingInFlight = false
   }
@@ -284,8 +307,28 @@ const stream = useIntegrityStream({
   onError: (err) => {
     streamError.value = err
     streamConnected.value = false
-    // Surface non-recoverable conditions in the global notification bar
-    // as well — the inline ErrorLogPanel banner stays for in-context recall.
+    // Special handling: ZTA was deleted while the user was watching it.
+    // Close the view, clear all related state, and surface an informational
+    // banner. Polling fallback would just keep hitting a 404 endpoint.
+    if (err.code === 'zta-not-found') {
+      const deletedApp = selectedApplication.value
+      selectedApplication.value = ''
+      integrityDetails.value = null
+      kopfEvents.value = []
+      stopIntegrityPolling()
+      notifyStore.addAlert({
+        error_code: 'ZTA_DELETED',
+        message: `Aplicația ${deletedApp} a fost ștearsă din cluster. Vizualizarea s-a închis automat.`,
+        technical_details: err.message,
+        component: 'INTEGRITY_STREAM',
+        trace_id: `DEL-${Math.random().toString(36).substring(2)}`,
+        action_required: 'Selectați altă aplicație din listă sau aplicați un manifest nou.',
+        type: 'warning',
+      })
+      return
+    }
+    // Other non-recoverable conditions still surface in the global
+    // notification bar; the inline ErrorLogPanel banner stays for context.
     if (!err.recoverable) {
       notifyStore.addAlert({
         error_code: `STREAM_${err.code.toUpperCase().replace(/-/g, '_')}`,
@@ -293,7 +336,7 @@ const stream = useIntegrityStream({
         technical_details: JSON.stringify(err.details || {}, null, 2),
         component: 'INTEGRITY_STREAM',
         trace_id: `STR-${Math.random().toString(36).substring(2)}`,
-        action_required: 'Stream-ul SSE s-a închis; UI-ul a comutat pe polling.',
+        action_required: 'Stream-ul SSE s-a închis.',
         type: 'error',
       })
     }

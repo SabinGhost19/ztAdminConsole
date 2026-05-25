@@ -3,6 +3,8 @@ from __future__ import annotations
 import logging
 import time
 
+from kubernetes_asyncio.client.exceptions import ApiException
+
 from app.core.k8s import get_core_api, get_custom_api
 
 GROUP = "devsecops.licenta.ro"
@@ -93,6 +95,18 @@ class K8sScannerService:
                 extra={"details": {**target, "durationMs": round((time.perf_counter() - started) * 1000, 2)}},
             )
             return payload
+        except ApiException as exc:
+            # 404 is a normal state (resource deleted, GitOps race) — log
+            # quietly at INFO without traceback. Callers handle the
+            # absence via their own logic (return {}, return 404 to UI).
+            if int(getattr(exc, "status", 0) or 0) == 404:
+                logger.info(
+                    "Custom resource not found",
+                    extra={"details": {**target, "status": 404}},
+                )
+            else:
+                logger.exception("Failed fetching custom resource", extra={"details": target})
+            raise
         except Exception:
             logger.exception("Failed fetching custom resource", extra={"details": target})
             raise

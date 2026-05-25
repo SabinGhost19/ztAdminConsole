@@ -76,8 +76,12 @@ export function useIntegrityStream(options: UseIntegrityStreamOptions) {
         }
         options.onError?.(err)
         if (!err.recoverable && !stopped) {
+          // Terminal error (e.g. zta-not-found after delete). Close the
+          // stream and DO NOT start the polling fallback — that would
+          // just hammer a 404 endpoint forever. The caller has already
+          // been notified via onError, which is responsible for clearing
+          // state and surfacing the deletion in the UI.
           stop()
-          options.onFallback?.()
         }
       } catch {
         options.onError?.({ code: 'parse-error', message: 'integrity error frame could not be parsed', recoverable: true })
