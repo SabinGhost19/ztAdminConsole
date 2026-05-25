@@ -1,3 +1,10 @@
+## [1.14.2](https://github.com/SabinGhost19/ztAdminConsole/compare/v1.14.1...v1.14.2) (2026-05-25)
+
+
+### Bug Fixes
+
+* **sca-crd,ui:** admit new policy fields + handle ZTA deletion live ([9296bde](https://github.com/SabinGhost19/ztAdminConsole/commit/9296bde57b5d2f8df0edcf77930bbf468267568b))
+
 ## [1.14.1](https://github.com/SabinGhost19/ztAdminConsole/compare/v1.14.0...v1.14.1) (2026-05-25)
 
 
