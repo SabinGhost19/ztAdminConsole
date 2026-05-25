@@ -68,6 +68,17 @@ const form = ref({
 const wafProfiles = ['REST-API', 'SPA', 'GRPC', 'Strict-Baseline']
 const applications = computed(() => dashboardStore.applications)
 const applicationOptions = computed(() => dashboardStore.applicationOptions)
+
+// Rich items for the autocomplete: each row carries the value (key used by
+// the watcher to split on '/'), the searchable title, and the original app
+// payload accessed in the custom item slot as `item.raw.app`.
+const applicationItems = computed(() =>
+  applications.value.map((app: any) => ({
+    value: `${app.metadata.namespace}/${app.metadata.name}`,
+    title: app.metadata.name,
+    app,
+  }))
+)
 const isLoadingApplications = computed(() => dashboardStore.loadingApplications)
 const isLoadingIntegrity = computed(() => dashboardStore.loadingIntegrity)
 // SCA dropdown: replaces free-text input so the user cannot reference a
@@ -561,9 +572,9 @@ function submitDeclaration() {
           <v-card-text>
             <v-autocomplete
               v-model="selectedApplication"
-              :items="applications"
-              :item-title="(a: any) => a.metadata.name"
-              :item-value="(a: any) => `${a.metadata.namespace}/${a.metadata.name}`"
+              :items="applicationItems"
+              item-title="title"
+              item-value="value"
               label="Select a ZTA application"
               placeholder="Type to filter…"
               variant="outlined"
@@ -572,7 +583,6 @@ function submitDeclaration() {
               prepend-inner-icon="mdi-shield-search"
               menu-icon="mdi-chevron-down"
               clearable
-              hide-details
               :menu-props="{ maxHeight: 480 }"
             >
               <template v-slot:item="{ props: itemProps, item }">
@@ -583,83 +593,83 @@ function submitDeclaration() {
                   :subtitle="undefined"
                 >
                   <template v-slot:prepend>
-                    <v-avatar :color="applicationSeverity(item.raw)" size="34" class="me-1">
-                      <v-icon size="18" color="white">{{ applicationIcon(item.raw) }}</v-icon>
+                    <v-avatar :color="applicationSeverity(item.raw.app)" size="34" class="me-1">
+                      <v-icon size="18" color="white">{{ applicationIcon(item.raw.app) }}</v-icon>
                     </v-avatar>
                   </template>
 
                   <div class="d-flex align-center ga-2 flex-wrap zta-option__title">
-                    <span class="font-weight-medium text-body-2">{{ item.raw.metadata.name }}</span>
+                    <span class="font-weight-medium text-body-2">{{ item.raw.app.metadata.name }}</span>
                     <v-chip
-                      :color="applicationSeverity(item.raw)"
+                      :color="applicationSeverity(item.raw.app)"
                       size="x-small"
                       variant="tonal"
                       density="comfortable"
                     >
-                      {{ applicationBadge(item.raw) }}
+                      {{ applicationBadge(item.raw.app) }}
                     </v-chip>
                     <v-chip
-                      v-if="guacIngestionSeverity(item.raw)"
-                      :color="guacIngestionSeverity(item.raw) || undefined"
+                      v-if="guacIngestionSeverity(item.raw.app)"
+                      :color="guacIngestionSeverity(item.raw.app) || undefined"
                       size="x-small"
                       variant="tonal"
                       prepend-icon="mdi-graph-outline"
                     >
-                      {{ guacIngestionLabel(item.raw) }}
+                      {{ guacIngestionLabel(item.raw.app) }}
                     </v-chip>
                     <v-chip
-                      v-if="(item.raw.summary?.vex?.exemptedCount || 0) > 0"
+                      v-if="(item.raw.app.summary?.vex?.exemptedCount || 0) > 0"
                       color="success"
                       size="x-small"
                       variant="tonal"
                       prepend-icon="mdi-shield-check-outline"
                     >
-                      VEX {{ item.raw.summary.vex.exemptedCount }}
+                      VEX {{ item.raw.app.summary.vex.exemptedCount }}
                     </v-chip>
                     <v-chip
-                      v-if="item.raw.summary?.merkle?.rfc6962"
+                      v-if="item.raw.app.summary?.merkle?.rfc6962"
                       color="primary"
                       size="x-small"
                       variant="tonal"
                       prepend-icon="mdi-merge"
                       title="Merkle tree uses RFC 6962 domain separation"
                     >
-                      Merkle v{{ item.raw.summary.merkle.version }}
+                      Merkle v{{ item.raw.app.summary.merkle.version }}
                     </v-chip>
                   </div>
 
                   <div class="text-caption text-secondary mt-1">
-                    <span class="font-mono">{{ item.raw.summary.securityPolicyRef || 'no policy' }}</span>
+                    <span class="font-mono">{{ item.raw.app.summary.securityPolicyRef || 'no policy' }}</span>
                     <span class="mx-1">•</span>
-                    <span>{{ item.raw.summary.securityState || 'Pending' }}</span>
-                    <span class="ms-2 text-medium-emphasis font-mono">{{ item.raw.metadata.namespace }}</span>
+                    <span>{{ item.raw.app.summary.securityState || 'Pending' }}</span>
+                    <span class="ms-2 text-medium-emphasis font-mono">{{ item.raw.app.metadata.namespace }}</span>
                   </div>
 
                   <div
-                    v-if="item.raw.summary.isAuditAlert"
+                    v-if="item.raw.app.summary.isAuditAlert"
                     class="text-caption text-warning mt-1 d-flex align-center ga-1"
                   >
                     <v-icon size="x-small">mdi-shield-alert-outline</v-icon>
                     Manifest Hash Drift Detected — Allowed due to Audit Policy
                   </div>
                   <div
-                    v-else-if="item.raw.summary.lastError"
+                    v-else-if="item.raw.app.summary.lastError"
                     class="text-caption text-error mt-1 d-flex align-center ga-1"
                   >
                     <v-icon size="x-small">mdi-alert-octagon-outline</v-icon>
-                    {{ item.raw.summary.lastErrorSummary || item.raw.summary.lastError }}
+                    {{ item.raw.app.summary.lastErrorSummary || item.raw.app.summary.lastError }}
                   </div>
                 </v-list-item>
               </template>
 
               <template v-slot:selection="{ item }">
-                <span class="d-flex align-center ga-2">
-                  <v-icon :color="applicationSeverity(item.raw)" size="18">
-                    {{ applicationIcon(item.raw) }}
+                <span class="d-flex align-center ga-2" v-if="item.raw?.app">
+                  <v-icon :color="applicationSeverity(item.raw.app)" size="18">
+                    {{ applicationIcon(item.raw.app) }}
                   </v-icon>
-                  <span class="font-weight-medium">{{ item.raw.metadata.name }}</span>
-                  <v-chip :color="applicationSeverity(item.raw)" size="x-small" variant="tonal">
-                    {{ applicationBadge(item.raw) }}
+                  <span class="font-weight-medium">{{ item.raw.app.metadata.name }}</span>
+                  <v-chip :color="applicationSeverity(item.raw.app)" size="x-small" variant="tonal">
+                    {{ applicationBadge(item.raw.app) }}
                   </v-chip>
                 </span>
               </template>
