@@ -1,6 +1,8 @@
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import StreamingResponse
 
 from app.services.integrity_service import get_application_integrity, list_integrity_applications, revalidate_application_integrity
+from app.services.integrity_stream import list_application_events, stream_integrity
 from app.services.state_cache import get_integrity_snapshot_record
 
 router = APIRouter()
@@ -22,6 +24,44 @@ async def get_integrity_application(namespace: str, name: str) -> dict:
 @router.post("/applications/{namespace}/{name}/revalidate")
 async def revalidate_integrity_application(namespace: str, name: str) -> dict:
     return await revalidate_application_integrity(namespace, name)
+
+
+@router.get("/applications/{namespace}/{name}/stream")
+async def stream_integrity_application(namespace: str, name: str) -> StreamingResponse:
+    """SSE stream: emits `integrity.snapshot` + `event.kopf` records as the
+    operator reconciles. Frontend uses EventSource; token passes via
+    ?access_token=<jwt> (extracted in security.identity)."""
+    return StreamingResponse(
+        stream_integrity(namespace, name),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+@router.get("/applications/{namespace}/{name}/events")
+async def list_integrity_application_events(namespace: str, name: str) -> list[dict]:
+    """One-shot list of kopf events for an application — initial timeline
+    backfill before the SSE stream takes over."""
+    return await list_application_events(namespace, name)
+
+
+@router.get("/applications/{namespace}/{name}/errors")
+async def list_integrity_application_errors(namespace: str, name: str) -> list[dict]:
+    """Read the operator's structured error ring-buffer
+    (`status.errors[]`). Newest first, capped to the ring-buffer size
+    chosen by the operator. Returns [] if the field is missing (older
+    operator versions)."""
+    payload = await get_application_integrity(namespace, name)
+    if not payload:
+        raise HTTPException(status_code=404, detail="ZeroTrustApplication not found")
+    errors = ((payload.get("application", {}) or {}).get("status", {}) or {}).get("errors", [])
+    if not isinstance(errors, list):
+        return []
+    return list(reversed(errors))
 
 
 @router.get("/applications/{namespace}/{name}/cache")

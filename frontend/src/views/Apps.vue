@@ -7,11 +7,17 @@ import { api } from '../api/axios'
 import BuildLedgerGraph from '../components/BuildLedgerGraph.vue'
 import ProvisioningPlan from '../components/ProvisioningPlan.vue'
 import ReconcileFlow from '../components/ReconcileFlow.vue'
+import EventsTimelinePanel from '../components/EventsTimelinePanel.vue'
+import VerificationStatusTable from '../components/VerificationStatusTable.vue'
+import CelEvaluationsTable from '../components/CelEvaluationsTable.vue'
+import BlastRadiusPanel from '../components/BlastRadiusPanel.vue'
+import ErrorLogPanel from '../components/ErrorLogPanel.vue'
 import SbomTree from '../components/SbomTree.vue'
 import VexExemptionsTable from '../components/VexExemptionsTable.vue'
 import { useNotificationStore } from '../store/notification'
 import { useDashboardStore } from '../store/dashboard'
 import { useAuthStore } from '../store/auth'
+import { useIntegrityStream, type KopfEvent, type IntegrityStreamError } from '../composables/useIntegrityStream'
 
 const notifyStore = useNotificationStore()
 const dashboardStore = useDashboardStore()
@@ -249,6 +255,73 @@ function stopIntegrityPolling() {
   }
 }
 
+// Real-time SSE subscription: replaces polling when the backend stream
+// is healthy. Falls back to polling after repeated connection errors.
+const kopfEvents = ref<KopfEvent[]>([])
+const streamConnected = ref(false)
+const streamError = ref<IntegrityStreamError | null>(null)
+const stream = useIntegrityStream({
+  onSnapshot: (payload) => {
+    if (!selectedApplication.value) return
+    const [ns, nm] = selectedApplication.value.split('/')
+    if (!ns || !nm) return
+    integrityDetails.value = payload
+    dashboardStore.setIntegrity(ns, nm, payload)
+    streamConnected.value = true
+    // Successful snapshot clears any transient error displayed in the banner.
+    if (streamError.value?.recoverable) streamError.value = null
+  },
+  onEvents: (events) => {
+    // Append + dedupe by uid; keep at most last 200.
+    const seen = new Set(kopfEvents.value.map((e) => e.uid))
+    for (const evt of events) {
+      if (!seen.has(evt.uid)) kopfEvents.value.push(evt)
+    }
+    if (kopfEvents.value.length > 200) {
+      kopfEvents.value = kopfEvents.value.slice(-200)
+    }
+  },
+  onError: (err) => {
+    streamError.value = err
+    streamConnected.value = false
+    // Surface non-recoverable conditions in the global notification bar
+    // as well — the inline ErrorLogPanel banner stays for in-context recall.
+    if (!err.recoverable) {
+      notifyStore.addAlert({
+        error_code: `STREAM_${err.code.toUpperCase().replace(/-/g, '_')}`,
+        message: err.message,
+        technical_details: JSON.stringify(err.details || {}, null, 2),
+        component: 'INTEGRITY_STREAM',
+        trace_id: `STR-${Math.random().toString(36).substring(2)}`,
+        action_required: 'Stream-ul SSE s-a închis; UI-ul a comutat pe polling.',
+        type: 'error',
+      })
+    }
+  },
+  onFallback: () => {
+    streamConnected.value = false
+    startIntegrityPolling()
+  },
+})
+
+async function startIntegrityRealtime() {
+  if (!selectedApplication.value) return
+  const [ns, nm] = selectedApplication.value.split('/')
+  if (!ns || !nm) return
+  kopfEvents.value = []
+  // Initial backfill of the events timeline before the stream kicks in.
+  try {
+    const resp = await api.get(`/integrity/applications/${ns}/${nm}/events`)
+    if (Array.isArray(resp.data)) kopfEvents.value = resp.data as KopfEvent[]
+  } catch { /* non-fatal */ }
+  await stream.start(ns, nm)
+}
+
+function stopIntegrityRealtime() {
+  stream.stop()
+  stopIntegrityPolling()
+}
+
 async function handleRetryReconcile() {
   if (!selectedApplication.value || isRetrying.value) return
   const [namespace, name] = selectedApplication.value.split('/')
@@ -265,8 +338,8 @@ async function handleRetryReconcile() {
       action_required: 'Aşteptaţi câteva secunde pentru actualizarea stagiilor.',
       type: 'warning',
     })
-    // Restart polling aggressively so the user sees the new state quickly.
-    startIntegrityPolling()
+    // Re-arm the realtime stream so the user sees the new state immediately.
+    await startIntegrityRealtime()
   } finally {
     isRetrying.value = false
   }
@@ -438,24 +511,23 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
-  stopIntegrityPolling()
+  stopIntegrityRealtime()
 })
 
 watch(selectedApplication, async (value) => {
+  stopIntegrityRealtime()
   if (!value) {
     integrityDetails.value = null
-    stopIntegrityPolling()
+    kopfEvents.value = []
     return
   }
 
   const [namespace, name] = value.split('/')
   const payload = await dashboardStore.fetchIntegrity(namespace, name, true)
   integrityDetails.value = payload
-  if (isIntegrityFlowStable(payload)) {
-    stopIntegrityPolling()
-  } else {
-    startIntegrityPolling()
-  }
+  // Always subscribe to SSE — even for stable flows we want to catch
+  // late events (GUAC async ingestion, runtime drift sanctions, etc.).
+  await startIntegrityRealtime()
 })
 
 async function revalidateIntegrity() {
@@ -467,7 +539,7 @@ async function revalidateIntegrity() {
     integrityDetails.value = response.data
     dashboardStore.setIntegrity(namespace, name, response.data)
     if (!isIntegrityFlowStable(response.data)) {
-      startIntegrityPolling()
+      await startIntegrityRealtime()
     }
     notifyStore.addAlert({
       error_code: 'INTEGRITY_REVALIDATED',
@@ -1058,11 +1130,36 @@ function submitDeclaration() {
     </v-row>
 
     <section v-if="integrityDetails" class="integrity-dashboard mt-6">
-      <div class="dashboard-panel span-12">
+      <div class="dashboard-panel span-7-lg span-12-sm">
         <ReconcileFlow
           :flow="integrityDetails.reconcileFlow"
           :retrying="isRetrying"
           @retry="handleRetryReconcile"
+        />
+      </div>
+      <div class="dashboard-panel span-5-lg span-12-sm">
+        <EventsTimelinePanel :events="kopfEvents" :connected="streamConnected" />
+      </div>
+
+      <div class="dashboard-panel span-12">
+        <ErrorLogPanel
+          :errors="integrityDetails.application?.status?.errors"
+          :stream-error="streamError"
+        />
+      </div>
+
+      <div class="dashboard-panel span-12">
+        <VerificationStatusTable :verifications="integrityDetails.application?.status?.verifications" />
+      </div>
+
+      <div class="dashboard-panel span-12">
+        <CelEvaluationsTable :evaluations="integrityDetails.application?.summary?.celEvaluations" />
+      </div>
+
+      <div class="dashboard-panel span-12">
+        <BlastRadiusPanel
+          :image="selectedAppSummary?.image"
+          :candidate-cves="trivyFindings.map((f) => f.cveId)"
         />
       </div>
 

@@ -1,3 +1,5 @@
+import asyncio
+import json as _json
 import uuid
 import logging
 from datetime import datetime, timezone
@@ -133,6 +135,101 @@ async def global_exception_handler(request: Request, exc: Exception):
         
         return JSONResponse(status_code=exc.status, content=err.model_dump())
     
+    # Timeouts: caller-side (asyncio.wait_for, httpx) — clients should retry.
+    if isinstance(exc, asyncio.TimeoutError):
+        err = _error_payload(
+            request,
+            trace_id,
+            error_code="UPSTREAM_TIMEOUT",
+            message="Operațiunea a depășit timpul maxim (timeout).",
+            technical_details=str(exc) or "asyncio.TimeoutError",
+            component="UPSTREAM",
+            action_required="Reîncearcă; dacă persistă, verifică sănătatea API server / GUAC.",
+            status_code=504,
+            error_type=type(exc).__name__,
+        )
+        logger.warning(
+            f"[{trace_id}] Upstream timeout: {exc}",
+            extra={"trace_id": trace_id, "path": request.url.path, "method": request.method, "status_code": 504},
+        )
+        return JSONResponse(status_code=504, content=err.model_dump())
+
+    # Cancellation propagated from upstream task (client disconnect, shutdown).
+    if isinstance(exc, asyncio.CancelledError):
+        err = _error_payload(
+            request,
+            trace_id,
+            error_code="REQUEST_CANCELLED",
+            message="Cererea a fost anulată înainte de finalizare.",
+            technical_details=str(exc) or "asyncio.CancelledError",
+            component="UPSTREAM",
+            action_required="Reîncearcă; clientul a închis conexiunea sau backend-ul se oprește.",
+            status_code=499,
+            error_type=type(exc).__name__,
+        )
+        logger.info(
+            f"[{trace_id}] Request cancelled",
+            extra={"trace_id": trace_id, "path": request.url.path, "method": request.method, "status_code": 499},
+        )
+        return JSONResponse(status_code=499, content=err.model_dump())
+
+    # Network / OS errors when talking to K8s / GUAC / Vault / etc.
+    if isinstance(exc, (ConnectionError, OSError)):
+        err = _error_payload(
+            request,
+            trace_id,
+            error_code="UPSTREAM_UNREACHABLE",
+            message="Un serviciu upstream nu poate fi contactat momentan.",
+            technical_details=f"{type(exc).__name__}: {exc}",
+            component="UPSTREAM",
+            action_required="Verifică conectivitatea către K8s API / GUAC / Vault și reîncearcă.",
+            status_code=502,
+            error_type=type(exc).__name__,
+        )
+        logger.error(
+            f"[{trace_id}] Upstream unreachable: {type(exc).__name__}: {exc}",
+            extra={"trace_id": trace_id, "path": request.url.path, "method": request.method, "status_code": 502},
+        )
+        return JSONResponse(status_code=502, content=err.model_dump())
+
+    # Malformed JSON from upstream (cosign, GUAC, OCI registry passthrough).
+    if isinstance(exc, _json.JSONDecodeError):
+        err = _error_payload(
+            request,
+            trace_id,
+            error_code="UPSTREAM_MALFORMED_RESPONSE",
+            message="Un răspuns de la un serviciu upstream nu a putut fi parsat ca JSON.",
+            technical_details=f"{exc.msg} @ line {exc.lineno} col {exc.colno}",
+            component="UPSTREAM",
+            action_required="Verifică versiunile cosign/trivy/GUAC; mesajul poate indica un protocol incompatibil.",
+            status_code=502,
+            error_type=type(exc).__name__,
+        )
+        logger.error(
+            f"[{trace_id}] Upstream malformed JSON: {exc}",
+            extra={"trace_id": trace_id, "path": request.url.path, "method": request.method, "status_code": 502},
+        )
+        return JSONResponse(status_code=502, content=err.model_dump())
+
+    # Permission errors propagated from local subprocess / filesystem checks.
+    if isinstance(exc, PermissionError):
+        err = _error_payload(
+            request,
+            trace_id,
+            error_code="PERMISSION_DENIED",
+            message="Acces refuzat la o resursă locală sau de cluster.",
+            technical_details=str(exc),
+            component="BACKEND_API",
+            action_required="Verifică RBAC-ul ServiceAccount-ului backend sau permisiunile filesystem.",
+            status_code=403,
+            error_type=type(exc).__name__,
+        )
+        logger.error(
+            f"[{trace_id}] PermissionError: {exc}",
+            extra={"trace_id": trace_id, "path": request.url.path, "method": request.method, "status_code": 403},
+        )
+        return JSONResponse(status_code=403, content=err.model_dump())
+
     # Prinde logica internă ZeroTrust (Business Logic de la operatori)
     if isinstance(exc, ZeroTrustException):
         err = _error_payload(

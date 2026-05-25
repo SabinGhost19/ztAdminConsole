@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 
 const props = defineProps<{
   flow?: Record<string, any> | null
@@ -10,462 +10,471 @@ const emit = defineEmits<{
   (e: 'retry'): void
 }>()
 
-function toneColor(status?: string) {
+type Tone = 'success' | 'error' | 'warning' | 'running' | 'skipped' | 'pending'
+
+function tone(status?: string): Tone {
   if (status === 'success') return 'success'
   if (status === 'failed') return 'error'
   if (status === 'warning') return 'warning'
-  if (status === 'running') return 'info'
-  if (status === 'skipped') return 'secondary'
-  return 'default'
+  if (status === 'running') return 'running'
+  if (status === 'skipped') return 'skipped'
+  return 'pending'
 }
 
-function toneIcon(status?: string) {
-  if (status === 'success') return 'mdi-check-bold'
+function statusLabel(status?: string) {
+  if (status === 'success') return 'Success'
+  if (status === 'failed') return 'Failed'
+  if (status === 'warning') return 'Warning'
+  if (status === 'running') return 'Running'
+  if (status === 'skipped') return 'Skipped'
+  return 'Pending'
+}
+
+function statusIcon(status?: string) {
+  if (status === 'success') return 'mdi-check-circle'
   if (status === 'failed') return 'mdi-close-circle'
-  if (status === 'warning') return 'mdi-alert-circle'
-  if (status === 'running') return 'mdi-loading'
+  if (status === 'warning') return 'mdi-alert'
   if (status === 'skipped') return 'mdi-skip-next-circle'
   return 'mdi-circle-outline'
 }
 
-// Show the retry button only when reconciliation reached a stable failure
-// state — the user has likely just fixed the cause (e.g. created the SCA)
-// and needs a way to nudge the operator without deleting + recreating.
+// Retry visibility — same logic as before; the operator may leave the flow
+// in a terminal failure state that the user can re-trigger manually.
 const showRetry = computed(() => {
   const phase = String(props.flow?.phase || '')
   return phase === 'Failed_SupplyChain' || phase === 'Degraded'
 })
 
-// Pipeline selection — clicking a node opens its detail panel below. By
-// default we auto-focus the most actionable step: a failed stage first,
-// then a running one, then the very first stage. This way the user sees
-// "why" a deploy is stuck without having to click around.
-const selectedStageId = ref<string | null>(null)
-const detailPanelRef = ref<HTMLElement | null>(null)
-const stageNodeRefs = ref<Record<string, HTMLElement | null>>({})
+// Auto-expand the most relevant stage. Failed > Running > first.
+const expandedId = ref<string | null>(null)
 
 watch(
   () => props.flow?.stages,
   (stages) => {
     if (!stages || !stages.length) {
-      selectedStageId.value = null
+      expandedId.value = null
       return
     }
-    const stillExists = selectedStageId.value && stages.some((s: any) => s.id === selectedStageId.value)
-    if (stillExists) return
+    if (expandedId.value && stages.some((s: any) => s.id === expandedId.value)) return
     const failed = stages.find((s: any) => s.status === 'failed')
     const running = stages.find((s: any) => s.status === 'running')
-    selectedStageId.value = failed?.id || running?.id || stages[0]?.id || null
+    expandedId.value = failed?.id || running?.id || null
   },
   { immediate: true, deep: true },
 )
 
-const selectedStage = computed(() => {
-  const stages = props.flow?.stages || []
-  return stages.find((s: any) => s.id === selectedStageId.value) || null
-})
-
-function selectStage(stageId: string) {
-  selectedStageId.value = stageId
-  nextTick(() => {
-    // Scroll the clicked node into view horizontally within the pipeline track
-    const nodeEl = stageNodeRefs.value[stageId]
-    nodeEl?.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' })
-    // Scroll the detail panel into vertical view so the user sees it immediately
-    detailPanelRef.value?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
-  })
+function toggleStage(id: string) {
+  expandedId.value = expandedId.value === id ? null : id
 }
 </script>
 
 <template>
-  <div class="flow-shell">
-    <div class="d-flex align-center justify-space-between mb-3 ga-2 flex-wrap">
-      <div class="text-subtitle-2 font-weight-medium">Reconcile Pipeline</div>
-      <div class="d-flex align-center ga-2">
-        <v-btn
+  <div class="gh-shell">
+    <header class="gh-header">
+      <div class="gh-title">Reconcile Pipeline</div>
+      <div class="gh-header-actions">
+        <button
           v-if="showRetry"
-          size="small"
-          variant="tonal"
-          color="warning"
-          prepend-icon="mdi-refresh"
-          :loading="retrying"
+          type="button"
+          class="gh-btn"
+          :disabled="retrying"
           @click="emit('retry')"
         >
-          Re-Evaluate
-        </v-btn>
-        <v-chip size="small" variant="tonal" color="primary">
-          {{ flow?.phase || 'Pending' }}
-        </v-chip>
+          <v-icon size="14" :class="{ spin: retrying }">mdi-refresh</v-icon>
+          <span>Re-Evaluate</span>
+        </button>
+        <span class="gh-phase">{{ flow?.phase || 'Pending' }}</span>
       </div>
-    </div>
+    </header>
 
-    <div v-if="!flow?.stages?.length" class="text-caption text-secondary">
+    <div v-if="!flow?.stages?.length" class="gh-empty">
       Execution flow not available yet.
     </div>
 
-    <template v-else>
-      <!-- Horizontal CI/CD pipeline (GitHub Actions / ArgoCD style).
-           Scrolls horizontally on narrow screens; each node is a button
-           that opens the detail panel below. -->
-      <div class="pipeline-track" role="list">
-        <template v-for="(stage, index) in flow.stages" :key="stage.id">
-          <button
-            :ref="(el) => { stageNodeRefs[stage.id] = el as HTMLElement }"
-            type="button"
-            class="pipeline-node"
-            :class="[
-              `tone-${toneColor(stage.status)}`,
-              { 'is-selected': selectedStageId === stage.id },
-            ]"
-            role="listitem"
-            @click="selectStage(stage.id)"
-          >
-            <div class="node-pill" :class="`tone-${toneColor(stage.status)}`">
-              <v-icon size="18" :class="{ spin: stage.status === 'running' }">
-                {{ toneIcon(stage.status) }}
-              </v-icon>
-            </div>
-            <div class="node-body">
-              <div class="node-title">{{ stage.title }}</div>
-              <div class="node-status" :class="`status-${toneColor(stage.status)}`">
-                {{ stage.status }}
-              </div>
-            </div>
-          </button>
-          <div
-            v-if="Number(index) < flow.stages.length - 1"
-            class="pipeline-arrow"
-            :class="`arrow-${toneColor(flow.stages[index].status)}`"
-            aria-hidden="true"
-          >
-            <v-icon size="16">mdi-arrow-down-thin</v-icon>
-          </div>
-        </template>
-      </div>
-
-      <!-- Detail panel: opens automatically for failed/running stages.
-           Acts like the expanded job view in GitHub Actions — shows the
-           sub-task forensics so the user knows *why* a step is in its
-           current state. -->
-      <div v-if="selectedStage" ref="detailPanelRef" class="detail-panel" :class="`tone-${toneColor(selectedStage.status)}`">
-        <div class="detail-header">
-          <div class="detail-pill" :class="`tone-${toneColor(selectedStage.status)}`">
-            <v-icon size="20" :class="{ spin: selectedStage.status === 'running' }">
-              {{ toneIcon(selectedStage.status) }}
-            </v-icon>
-          </div>
-          <div class="flex-grow-1">
-            <div class="d-flex align-center ga-2 flex-wrap">
-              <div class="text-body-2 font-weight-medium">{{ selectedStage.title }}</div>
-              <v-chip size="x-small" variant="tonal" :color="toneColor(selectedStage.status)">
-                {{ selectedStage.status }}
-              </v-chip>
-            </div>
-            <div class="text-caption text-secondary">{{ selectedStage.description }}</div>
-          </div>
-        </div>
-
-        <div
-          v-if="selectedStage.message && selectedStage.status === 'running'"
-          class="detail-message text-caption text-info font-italic mt-2"
+    <ol v-else class="gh-track">
+      <li
+        v-for="(stage, index) in flow.stages"
+        :key="stage.id"
+        class="gh-stage"
+        :class="[`tone-${tone(stage.status)}`, { 'is-first': index === 0, 'is-last': index === flow.stages.length - 1 }]"
+      >
+        <button
+          type="button"
+          class="gh-stage-row"
+          :class="{ 'is-open': expandedId === stage.id }"
+          :aria-expanded="expandedId === stage.id"
+          @click="toggleStage(stage.id)"
         >
-          <v-icon size="12" class="mr-1">mdi-clock-outline</v-icon>{{ selectedStage.message }}
-        </div>
+          <span class="gh-stage-icon" :class="`tone-${tone(stage.status)}`">
+            <v-icon v-if="stage.status === 'running'" size="18" class="spin">mdi-loading</v-icon>
+            <v-icon v-else size="18">{{ statusIcon(stage.status) }}</v-icon>
+          </span>
 
-        <div v-if="selectedStage.subtasks && selectedStage.subtasks.length" class="subtasks">
-          <div
-            v-for="task in selectedStage.subtasks"
-            :key="task.id"
-            class="subtask-row"
-            :class="`subtask-tone-${toneColor(task.status)}`"
-          >
-            <div class="subtask-icon" :class="`tone-${toneColor(task.status)}`">
-              <v-icon size="14" :class="{ spin: task.status === 'running' }">
-                {{ toneIcon(task.status) }}
-              </v-icon>
+          <span class="gh-stage-body">
+            <span class="gh-stage-title">{{ stage.title }}</span>
+            <span v-if="stage.description" class="gh-stage-sub">{{ stage.description }}</span>
+          </span>
+
+          <span class="gh-stage-status" :class="`tone-${tone(stage.status)}`">
+            {{ statusLabel(stage.status) }}
+          </span>
+
+          <v-icon
+            size="16"
+            class="gh-chevron"
+            :class="{ 'is-open': expandedId === stage.id }"
+          >mdi-chevron-down</v-icon>
+        </button>
+
+        <transition name="gh-collapse">
+          <div v-if="expandedId === stage.id" class="gh-stage-details">
+            <div
+              v-if="stage.message && stage.status === 'running'"
+              class="gh-detail-banner"
+            >
+              <v-icon size="14">mdi-clock-outline</v-icon>
+              <span>{{ stage.message }}</span>
             </div>
-            <div class="flex-grow-1">
-              <div class="d-flex align-center ga-2 flex-wrap">
-                <div class="text-body-2 font-weight-medium">{{ task.title }}</div>
-                <v-chip size="x-small" variant="tonal" :color="toneColor(task.status)">
-                  {{ task.status }}
-                </v-chip>
+
+            <div v-if="stage.subtasks && stage.subtasks.length" class="gh-log">
+              <div
+                v-for="(task, ti) in stage.subtasks"
+                :key="task.id"
+                class="gh-log-row"
+                :class="`tone-${tone(task.status)}`"
+              >
+                <span class="gh-log-line">{{ String(ti + 1).padStart(2, '0') }}</span>
+                <v-icon size="14" class="gh-log-icon" :class="{ spin: task.status === 'running' }">
+                  {{ task.status === 'running' ? 'mdi-loading' : statusIcon(task.status) }}
+                </v-icon>
+                <div class="gh-log-content">
+                  <div class="gh-log-title">{{ task.title }}</div>
+                  <div v-if="task.detail" class="gh-log-detail">{{ task.detail }}</div>
+                </div>
               </div>
-              <div v-if="task.detail" class="text-caption text-secondary mt-1" style="word-break: break-word;">
-                {{ task.detail }}
-              </div>
+            </div>
+            <div v-else class="gh-log-empty">
+              No sub-step forensics available for this stage.
             </div>
           </div>
-        </div>
-        <div v-else class="text-caption text-secondary mt-2 font-italic">
-          No sub-step forensics available for this stage.
-        </div>
-      </div>
-    </template>
+        </transition>
+      </li>
+    </ol>
   </div>
 </template>
 
 <style scoped>
-.flow-shell {
-  border: 1px solid rgba(var(--v-theme-on-surface), 0.12);
-  border-radius: 16px;
-  padding: 16px;
-  background: rgba(var(--v-theme-surface), 1);
-}
+/* GitHub Actions–inspired palette (dark mode). Hard-coded because these are
+   product-identity colors, not theme tokens. */
+.gh-shell {
+  --gh-canvas: #0d1117;
+  --gh-default: #161b22;
+  --gh-subtle: #1c2128;
+  --gh-border: #30363d;
+  --gh-border-muted: #21262d;
+  --gh-fg: #c9d1d9;
+  --gh-fg-muted: #8b949e;
+  --gh-success: #3fb950;
+  --gh-error: #f85149;
+  --gh-warning: #d29922;
+  --gh-info: #58a6ff;
+  --gh-skipped: #8b949e;
 
-/* --- Vertical pipeline track --------------------------------------- */
-.pipeline-track {
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 4px;
-  padding: 8px 4px 14px 4px;
-}
-
-.pipeline-node {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  width: 100%;
-  min-height: 60px;
-  padding: 10px 16px;
+  background: var(--gh-canvas);
+  border: 1px solid var(--gh-border);
   border-radius: 12px;
-  border: 3px solid rgba(var(--v-theme-on-surface), 0.22);
-  background: transparent;
-  cursor: pointer;
-  text-align: left;
-  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+  padding: 16px 18px;
+  color: var(--gh-fg);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif;
 }
 
-.pipeline-node:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.08);
-}
-
-.pipeline-node.is-selected {
-  border-color: rgba(var(--v-theme-primary), 0.7);
-  box-shadow: 0 0 0 2px rgba(var(--v-theme-primary), 0.35), 0 8px 22px rgba(0, 0, 0, 0.08);
-}
-
-.pipeline-node.tone-error.is-selected {
-  border-color: rgba(var(--v-theme-error), 0.8);
-  box-shadow: 0 0 0 2px rgba(var(--v-theme-error), 0.35), 0 8px 22px rgba(0, 0, 0, 0.08);
-}
-
-.pipeline-node.tone-info.is-selected {
-  border-color: rgba(var(--v-theme-info), 0.8);
-  box-shadow: 0 0 0 2px rgba(var(--v-theme-info), 0.35), 0 8px 22px rgba(0, 0, 0, 0.08);
-}
-
-.node-pill {
-  width: 34px;
-  height: 34px;
-  border-radius: 999px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border: 2px solid transparent;
-  flex-shrink: 0;
-}
-
-.node-body {
+/* --- Header -------------------------------------------------------- */
+.gh-header {
   display: flex;
-  flex-direction: row;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  flex-grow: 1;
-  min-width: 0;
+  margin-bottom: 14px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--gh-border-muted);
 }
 
-.node-title {
-  font-size: 0.82rem;
+.gh-title {
+  font-size: 14px;
   font-weight: 600;
-  color: rgba(var(--v-theme-on-surface), 0.92);
-  line-height: 1.25;
-  white-space: normal;
-  word-break: break-word;
-  flex: 1 1 auto;
-  min-width: 0;
+  color: var(--gh-fg);
+  letter-spacing: -0.01em;
 }
 
-.node-status {
-  font-size: 0.68rem;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  font-weight: 600;
-  opacity: 0.9;
-  flex-shrink: 0;
-}
-
-.status-success { color: rgb(var(--v-theme-success)); }
-.status-error { color: rgb(var(--v-theme-error)); }
-.status-warning { color: rgb(var(--v-theme-warning)); }
-.status-info { color: rgb(var(--v-theme-info)); }
-.status-secondary,
-.status-default { color: rgba(var(--v-theme-on-surface), 0.7); }
-
-.pipeline-arrow {
+.gh-header-actions {
   display: flex;
   align-items: center;
-  justify-content: center;
-  color: rgba(var(--v-theme-on-surface), 0.4);
-  flex-shrink: 0;
-  height: 18px;
-  margin-left: 28px; /* aligns visually with the icon pill on the left of each node */
-  align-self: flex-start;
+  gap: 8px;
 }
 
-.arrow-success { color: rgba(var(--v-theme-success), 0.7); }
-.arrow-error { color: rgba(var(--v-theme-error), 0.55); }
-.arrow-info { color: rgba(var(--v-theme-info), 0.7); }
-
-/* --- Detail panel (sub-tasks accordion) ---------------------------- */
-.detail-panel {
-  border: 3px solid rgba(var(--v-theme-on-surface), 0.15);
-  border-radius: 14px;
-  padding: 14px 16px;
-  background: rgba(var(--v-theme-surface), 1);
-  margin-top: 10px;
-}
-
-.detail-panel.tone-error {
-  border-color: rgb(var(--v-theme-error));
-}
-
-.detail-panel.tone-info {
-  border-color: rgb(var(--v-theme-info));
-}
-
-.detail-panel.tone-success {
-  border-color: rgb(var(--v-theme-success));
-}
-
-.detail-panel.tone-warning {
-  border-color: rgb(var(--v-theme-warning));
-}
-
-.detail-header {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.detail-pill {
-  width: 42px;
-  height: 42px;
-  border-radius: 999px;
+.gh-btn {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  border: 2px solid transparent;
-  flex-shrink: 0;
+  gap: 6px;
+  padding: 4px 12px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--gh-fg);
+  background: var(--gh-default);
+  border: 1px solid var(--gh-border);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+.gh-btn:hover:not(:disabled) { background: var(--gh-subtle); border-color: var(--gh-fg-muted); }
+.gh-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+
+.gh-phase {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--gh-info);
+  background: rgba(88, 166, 255, 0.1);
+  border: 1px solid rgba(88, 166, 255, 0.4);
+  border-radius: 999px;
 }
 
-.subtasks {
+.gh-empty {
+  font-size: 12px;
+  color: var(--gh-fg-muted);
+  padding: 12px 0;
+}
+
+/* --- Pipeline rail ------------------------------------------------- */
+.gh-track {
+  position: relative;
+  list-style: none;
+  margin: 0;
+  padding: 4px 0 4px 0;
+}
+
+/* Continuous vertical rail aligned with the center of the 28px icon */
+.gh-track::before {
+  content: "";
+  position: absolute;
+  left: 13px;
+  top: 24px;
+  bottom: 24px;
+  width: 2px;
+  background: var(--gh-border);
+  border-radius: 2px;
+  z-index: 0;
+}
+
+.gh-stage {
+  position: relative;
+  margin: 0;
+  padding: 0;
+}
+.gh-stage + .gh-stage { margin-top: 6px; }
+
+/* --- Stage row (the clickable header) ------------------------------ */
+.gh-stage-row {
+  position: relative;
+  z-index: 1;
   display: grid;
-  gap: 8px;
-  margin-top: 14px;
-}
-
-.subtask-row {
-  display: flex;
-  align-items: flex-start;
+  grid-template-columns: 28px 1fr auto auto;
+  align-items: center;
   gap: 12px;
-  padding: 10px 12px;
-  border-radius: 10px;
-  background: rgba(var(--v-theme-surface), 1);
-  border: 3px solid rgba(var(--v-theme-on-surface), 0.1);
+  width: 100%;
+  padding: 10px 12px 10px 0;
+  background: transparent;
+  border: none;
+  border-radius: 8px;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s;
 }
+.gh-stage-row:hover { background: var(--gh-default); }
+.gh-stage-row.is-open { background: var(--gh-default); }
 
-.subtask-row.subtask-tone-error {
-  background: rgba(var(--v-theme-surface), 1);
-  border-color: rgb(var(--v-theme-error));
-}
-
-.subtask-row.subtask-tone-success {
-  background: rgba(var(--v-theme-surface), 1);
-  border-color: rgb(var(--v-theme-success));
-}
-
-.subtask-row.subtask-tone-info {
-  background: rgba(var(--v-theme-surface), 1);
-  border-color: rgb(var(--v-theme-info));
-}
-
-.subtask-row.subtask-tone-warning {
-  background: rgba(var(--v-theme-surface), 1);
-  border-color: rgb(var(--v-theme-warning));
-}
-
-.subtask-icon {
+.gh-stage-icon {
   width: 28px;
   height: 28px;
   border-radius: 999px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border: 2px solid transparent;
+  background: var(--gh-canvas);
+  border: 2px solid var(--gh-border);
+  color: var(--gh-fg-muted);
   flex-shrink: 0;
-  margin-top: 1px;
+}
+.gh-stage-icon.tone-success { color: var(--gh-success); border-color: var(--gh-success); }
+.gh-stage-icon.tone-error   { color: var(--gh-error);   border-color: var(--gh-error); }
+.gh-stage-icon.tone-warning { color: var(--gh-warning); border-color: var(--gh-warning); }
+.gh-stage-icon.tone-running { color: var(--gh-info);    border-color: var(--gh-info); }
+.gh-stage-icon.tone-skipped { color: var(--gh-skipped); border-color: var(--gh-border); background: var(--gh-canvas); }
+.gh-stage-icon.tone-pending { color: var(--gh-fg-muted); border-color: var(--gh-border); }
+
+.gh-stage-body {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.gh-stage-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--gh-fg);
+  line-height: 1.3;
+}
+.gh-stage-sub {
+  font-size: 12px;
+  color: var(--gh-fg-muted);
+  line-height: 1.4;
+  margin-top: 2px;
 }
 
-/* --- Shared tone palette: only border + icon colored, no fill ------ */
-.tone-success {
-  background: transparent;
-  color: rgb(var(--v-theme-success));
-  border-color: rgb(var(--v-theme-success));
+.gh-stage-status {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+.gh-stage-status.tone-success { color: var(--gh-success); border-color: rgba(63, 185, 80, 0.4);  background: rgba(63, 185, 80, 0.1); }
+.gh-stage-status.tone-error   { color: var(--gh-error);   border-color: rgba(248, 81, 73, 0.4);  background: rgba(248, 81, 73, 0.1); }
+.gh-stage-status.tone-warning { color: var(--gh-warning); border-color: rgba(210, 153, 34, 0.4); background: rgba(210, 153, 34, 0.1); }
+.gh-stage-status.tone-running { color: var(--gh-info);    border-color: rgba(88, 166, 255, 0.4); background: rgba(88, 166, 255, 0.1); }
+.gh-stage-status.tone-skipped { color: var(--gh-skipped); border-color: var(--gh-border);        background: transparent; }
+.gh-stage-status.tone-pending { color: var(--gh-fg-muted); border-color: var(--gh-border);       background: transparent; }
+
+.gh-chevron {
+  color: var(--gh-fg-muted);
+  transition: transform 0.2s ease;
+}
+.gh-chevron.is-open { transform: rotate(180deg); color: var(--gh-fg); }
+
+/* --- Detail panel (inline, doesn't shift sibling positions) ------- */
+.gh-stage-details {
+  position: relative;
+  z-index: 1;
+  margin: 4px 0 8px 40px;
+  background: var(--gh-default);
+  border: 1px solid var(--gh-border-muted);
+  border-radius: 8px;
+  padding: 12px 14px;
 }
 
-.tone-error {
-  background: transparent;
-  color: rgb(var(--v-theme-error));
-  border-color: rgb(var(--v-theme-error));
+.gh-detail-banner {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--gh-info);
+  background: rgba(88, 166, 255, 0.08);
+  border: 1px solid rgba(88, 166, 255, 0.3);
+  border-radius: 6px;
+  padding: 4px 10px;
+  margin-bottom: 10px;
 }
 
-.tone-warning {
-  background: transparent;
-  color: rgb(var(--v-theme-warning));
-  border-color: rgb(var(--v-theme-warning));
+.gh-log {
+  display: flex;
+  flex-direction: column;
+  background: var(--gh-canvas);
+  border: 1px solid var(--gh-border-muted);
+  border-radius: 6px;
+  overflow: hidden;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
 }
 
-.tone-info {
-  background: transparent;
-  color: rgb(var(--v-theme-info));
-  border-color: rgb(var(--v-theme-info));
+.gh-log-row {
+  display: grid;
+  grid-template-columns: 36px 18px 1fr;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--gh-border-muted);
+  font-size: 12px;
+  color: var(--gh-fg);
+}
+.gh-log-row:last-child { border-bottom: none; }
+
+.gh-log-line {
+  color: var(--gh-fg-muted);
+  font-variant-numeric: tabular-nums;
+  user-select: none;
+}
+.gh-log-icon { margin-top: 1px; }
+.gh-log-row.tone-success .gh-log-icon { color: var(--gh-success); }
+.gh-log-row.tone-error   .gh-log-icon { color: var(--gh-error); }
+.gh-log-row.tone-warning .gh-log-icon { color: var(--gh-warning); }
+.gh-log-row.tone-running .gh-log-icon { color: var(--gh-info); }
+.gh-log-row.tone-skipped .gh-log-icon { color: var(--gh-skipped); }
+
+.gh-log-content { min-width: 0; }
+.gh-log-title {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-weight: 500;
+  color: var(--gh-fg);
+}
+.gh-log-detail {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  color: var(--gh-fg-muted);
+  font-size: 11.5px;
+  margin-top: 3px;
+  word-break: break-word;
+  white-space: pre-wrap;
 }
 
-.tone-secondary,
-.tone-default {
-  background: transparent;
-  color: rgba(var(--v-theme-on-surface), 0.8);
-  border-color: rgba(var(--v-theme-on-surface), 0.4);
+.gh-log-status {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 10.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding-top: 2px;
+}
+.gh-log-status.tone-success { color: var(--gh-success); }
+.gh-log-status.tone-error   { color: var(--gh-error); }
+.gh-log-status.tone-warning { color: var(--gh-warning); }
+.gh-log-status.tone-running { color: var(--gh-info); }
+.gh-log-status.tone-skipped { color: var(--gh-skipped); }
+
+.gh-log-empty {
+  font-size: 12px;
+  color: var(--gh-fg-muted);
+  font-style: italic;
 }
 
-/* Pipeline node tones: only border is colored, no fill */
-.pipeline-node.tone-success,
-.pipeline-node.tone-error,
-.pipeline-node.tone-warning,
-.pipeline-node.tone-info,
-.pipeline-node.tone-secondary,
-.pipeline-node.tone-default {
-  background: transparent;
-  color: inherit;
-}
-
-.pipeline-node.tone-success { border: 3px solid rgb(var(--v-theme-success)); }
-.pipeline-node.tone-error   { border: 3px solid rgb(var(--v-theme-error)); }
-.pipeline-node.tone-warning { border: 3px solid rgb(var(--v-theme-warning)); }
-.pipeline-node.tone-info    { border: 3px solid rgb(var(--v-theme-info)); }
-.pipeline-node.tone-secondary,
-.pipeline-node.tone-default { border: 3px solid rgba(var(--v-theme-on-surface), 0.22); }
-
+/* --- Animations ---------------------------------------------------- */
 .spin {
   animation: spin 1s linear infinite;
 }
-
 @keyframes spin {
   from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
+  to   { transform: rotate(360deg); }
+}
+
+.gh-collapse-enter-active,
+.gh-collapse-leave-active {
+  transition: opacity 0.18s ease, max-height 0.22s ease, margin 0.22s ease;
+  overflow: hidden;
+}
+.gh-collapse-enter-from,
+.gh-collapse-leave-to {
+  opacity: 0;
+  max-height: 0;
+  margin-top: 0;
+  margin-bottom: 0;
+}
+.gh-collapse-enter-to,
+.gh-collapse-leave-from {
+  opacity: 1;
+  max-height: 800px;
 }
 </style>

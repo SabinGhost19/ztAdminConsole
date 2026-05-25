@@ -499,22 +499,42 @@ def _build_stage_subtasks(
     summary = application.get("summary", {}) or {}
     attestations = status.get("attestations", {}) or {}
     details = status.get("details", {}) or {}
+    verifications = status.get("verifications", {}) or {}
     policy_summary = (policy or {}).get("summary", {}) or {}
     past_supply_chain = phase in {"Provisioning", "Running", "Degraded"}
+
+    def _verif_subtask(key: str, *, legacy_status: str, legacy_detail: str) -> dict[str, Any]:
+        """Prefer the structured status.verifications.<key> entry written
+        by the operator; fall back to legacy regex-derived status."""
+        entry = verifications.get(key) if isinstance(verifications, dict) else None
+        if isinstance(entry, dict) and ("passed" in entry):
+            return {
+                "status": "success" if bool(entry.get("passed")) else "failed",
+                "detail": str(entry.get("reason") or "") or legacy_detail,
+            }
+        return {"status": legacy_status, "detail": legacy_detail}
 
     if stage_id == "supply-chain":
         # Cosign keyless verification
         if "cosign" in err and ("verification" in err or "verify" in err or "signature" in err):
-            cosign = {"status": "failed", "detail": "Signature verification failed against all trusted issuers."}
+            cosign_legacy = ("failed", "Signature verification failed against all trusted issuers.")
         elif past_supply_chain or security_state == "Alert":
-            cosign = {"status": "success", "detail": "Image signature valid (keyless OIDC via GitHub Actions)."}
+            cosign_legacy = ("success", "Image signature valid (keyless OIDC via GitHub Actions).")
         elif phase == "Validating":
-            cosign = {"status": "running", "detail": "Verifying signature against trusted OIDC identities..."}
+            cosign_legacy = ("running", "Verifying signature against trusted OIDC identities...")
         else:
-            cosign = {"status": "pending", "detail": "Awaiting supply-chain scan."}
+            cosign_legacy = ("pending", "Awaiting supply-chain scan.")
+        cosign = _verif_subtask("cosign", legacy_status=cosign_legacy[0], legacy_detail=cosign_legacy[1])
 
-        # Trivy vulnerability scan
-        if "trivy-threshold-exceeded" in err:
+        # Trivy vulnerability scan — prefer status.verifications.trivy if present.
+        trivy_entry = verifications.get("trivy") if isinstance(verifications, dict) else None
+        if isinstance(trivy_entry, dict) and "passed" in trivy_entry:
+            if bool(trivy_entry.get("passed")):
+                highest = trivy_entry.get("highest") or details.get("highest", "NONE")
+                trivy = {"status": "success", "detail": f"No vulnerabilities above policy threshold (highest found: {highest})."}
+            else:
+                trivy = {"status": "failed", "detail": str(trivy_entry.get("reason") or "Trivy policy violation.")}
+        elif "trivy-threshold-exceeded" in err:
             highest = details.get("highest", "?")
             threshold = details.get("threshold", "?")
             trivy = {"status": "failed", "detail": f"Found {highest} severity vulnerability — policy threshold is {threshold}."}
@@ -592,6 +612,30 @@ def _build_stage_subtasks(
                     f"MISMATCH — expected={expected[:16]}... computed={computed[:16]}..."
                     if hash_mismatch else
                     f"Match — sha256:{(computed or expected)[:24]}..."
+                ),
+            })
+        # SLSA v1.0 provenance — only surfaced if the operator recorded an
+        # entry under status.verifications.slsaProvenance (enforced via SCA
+        # slsaProvenancePolicy.enforceSlsa). Otherwise hidden so we don't
+        # show a fake "pending" line for clusters that don't require SLSA.
+        slsa_entry = verifications.get("slsaProvenance") if isinstance(verifications, dict) else None
+        if isinstance(slsa_entry, dict) and "passed" in slsa_entry:
+            out.append({
+                "id": "slsa-provenance",
+                "title": "SLSA v1.0 Provenance",
+                "status": "success" if bool(slsa_entry.get("passed")) else "failed",
+                "detail": str(slsa_entry.get("reason") or "") or (
+                    f"builder={slsa_entry.get('builderId', '')} buildType={slsa_entry.get('buildType', '')}"
+                ),
+            })
+        openvex_entry = verifications.get("openvex") if isinstance(verifications, dict) else None
+        if isinstance(openvex_entry, dict) and "passed" in openvex_entry:
+            out.append({
+                "id": "openvex",
+                "title": "OpenVEX Signed Attestation",
+                "status": "success" if bool(openvex_entry.get("passed")) else "failed",
+                "detail": str(openvex_entry.get("reason") or "") or (
+                    f"{openvex_entry.get('statementCount', 0)} statements"
                 ),
             })
         return out
