@@ -65,6 +65,11 @@ async def approve_jit_request(namespace: str, name: str, approver_email: str) ->
             "approvedAt": datetime.now(timezone.utc).isoformat(),
         }
     }
+    # CRDs reject the client's default `application/strategic-merge-patch+json`
+    # with HTTP 415. Force merge-patch+json for the duration of this call.
+    api_client = api.api_client
+    original_selector = api_client.select_header_content_type
+    api_client.select_header_content_type = lambda *_a, **_kw: "application/merge-patch+json"
     try:
         payload = await api.patch_namespaced_custom_object_status(
             group=GROUP,
@@ -86,6 +91,8 @@ async def approve_jit_request(namespace: str, name: str, approver_email: str) ->
                 action_required="Reîncărcați tabelul.",
             )
         raise
+    finally:
+        api_client.select_header_content_type = original_selector
 
 
 async def revoke_jit_access(namespace: str, name: str):

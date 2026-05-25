@@ -138,7 +138,7 @@ function selectStage(stageId: string) {
             :class="`arrow-${toneColor(flow.stages[index].status)}`"
             aria-hidden="true"
           >
-            <v-icon size="16">mdi-arrow-right-thin</v-icon>
+            <v-icon size="16">mdi-arrow-down-thin</v-icon>
           </div>
         </template>
       </div>
@@ -213,26 +213,25 @@ function selectStage(stageId: string) {
   background: rgba(var(--v-theme-surface), 1);
 }
 
-/* --- Horizontal pipeline track ------------------------------------- */
+/* --- Vertical pipeline track --------------------------------------- */
 .pipeline-track {
   display: flex;
+  flex-direction: column;
   align-items: stretch;
-  gap: 6px;
-  overflow-x: auto;
+  gap: 4px;
   padding: 8px 4px 14px 4px;
-  scrollbar-width: thin;
 }
 
 .pipeline-node {
   display: flex;
   align-items: center;
-  gap: 10px;
-  min-width: 168px;
-  flex-shrink: 0;
-  padding: 10px 14px;
+  gap: 12px;
+  width: 100%;
+  min-height: 60px;
+  padding: 10px 16px;
   border-radius: 12px;
   border: 3px solid rgba(var(--v-theme-on-surface), 0.22);
-  background: rgba(var(--v-theme-surface), 1);
+  background: transparent;
   cursor: pointer;
   text-align: left;
   transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
@@ -271,24 +270,32 @@ function selectStage(stageId: string) {
 
 .node-body {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-grow: 1;
   min-width: 0;
 }
 
 .node-title {
-  font-size: 0.78rem;
+  font-size: 0.82rem;
   font-weight: 600;
   color: rgba(var(--v-theme-on-surface), 0.92);
-  line-height: 1.2;
-  white-space: nowrap;
+  line-height: 1.25;
+  white-space: normal;
+  word-break: break-word;
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 .node-status {
   font-size: 0.68rem;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
-  opacity: 0.85;
-  margin-top: 2px;
+  letter-spacing: 0.06em;
+  font-weight: 600;
+  opacity: 0.9;
+  flex-shrink: 0;
 }
 
 .status-success { color: rgb(var(--v-theme-success)); }
@@ -302,9 +309,11 @@ function selectStage(stageId: string) {
   display: flex;
   align-items: center;
   justify-content: center;
-  color: rgba(var(--v-theme-on-surface), 0.32);
+  color: rgba(var(--v-theme-on-surface), 0.4);
   flex-shrink: 0;
-  padding: 0 2px;
+  height: 18px;
+  margin-left: 28px; /* aligns visually with the icon pill on the left of each node */
+  align-self: flex-start;
 }
 
 .arrow-success { color: rgba(var(--v-theme-success), 0.7); }
@@ -401,46 +410,46 @@ function selectStage(stageId: string) {
   margin-top: 1px;
 }
 
-/* --- Shared tone palette (pill + icon backgrounds) ----------------- */
+/* --- Shared tone palette: only border + icon colored, no fill ------ */
 .tone-success {
-  background: rgba(var(--v-theme-success), 0.2);
+  background: transparent;
   color: rgb(var(--v-theme-success));
-  border-color: rgba(var(--v-theme-success), 0.6);
+  border-color: rgb(var(--v-theme-success));
 }
 
 .tone-error {
-  background: rgba(var(--v-theme-error), 0.2);
+  background: transparent;
   color: rgb(var(--v-theme-error));
-  border-color: rgba(var(--v-theme-error), 0.6);
+  border-color: rgb(var(--v-theme-error));
 }
 
 .tone-warning {
-  background: rgba(var(--v-theme-warning), 0.2);
+  background: transparent;
   color: rgb(var(--v-theme-warning));
-  border-color: rgba(var(--v-theme-warning), 0.6);
+  border-color: rgb(var(--v-theme-warning));
 }
 
 .tone-info {
-  background: rgba(var(--v-theme-info), 0.2);
+  background: transparent;
   color: rgb(var(--v-theme-info));
-  border-color: rgba(var(--v-theme-info), 0.6);
+  border-color: rgb(var(--v-theme-info));
 }
 
 .tone-secondary,
 .tone-default {
-  background: rgba(var(--v-theme-on-surface), 0.1);
+  background: transparent;
   color: rgba(var(--v-theme-on-surface), 0.8);
-  border-color: rgba(var(--v-theme-on-surface), 0.2);
+  border-color: rgba(var(--v-theme-on-surface), 0.4);
 }
 
-/* Pipeline node tones: only border is colored, background stays surface */
+/* Pipeline node tones: only border is colored, no fill */
 .pipeline-node.tone-success,
 .pipeline-node.tone-error,
 .pipeline-node.tone-warning,
 .pipeline-node.tone-info,
 .pipeline-node.tone-secondary,
 .pipeline-node.tone-default {
-  background: rgba(var(--v-theme-surface), 1);
+  background: transparent;
   color: inherit;
 }
 
