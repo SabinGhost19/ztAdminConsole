@@ -143,7 +143,7 @@ function toggleStage(id: string) {
                 class="gh-log-row"
                 :class="`tone-${tone(task.status)}`"
               >
-                <span class="gh-log-line">{{ String(ti + 1).padStart(2, '0') }}</span>
+                <span class="gh-log-line">{{ String(Number(ti) + 1).padStart(2, '0') }}</span>
                 <v-icon size="14" class="gh-log-icon" :class="{ spin: task.status === 'running' }">
                   {{ task.status === 'running' ? 'mdi-loading' : statusIcon(task.status) }}
                 </v-icon>
