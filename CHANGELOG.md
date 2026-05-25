@@ -1,3 +1,10 @@
+# [1.14.0](https://github.com/SabinGhost19/ztAdminConsole/compare/v1.13.1...v1.14.0) (2026-05-25)
+
+
+### Features
+
+* structured error taxonomy across operator, backend, SSE and UI ([0635747](https://github.com/SabinGhost19/ztAdminConsole/commit/063574760b69825930a47c96ca97649db0933e66))
+
 ## [1.13.1](https://github.com/SabinGhost19/ztAdminConsole/compare/v1.13.0...v1.13.1) (2026-05-23)
 
 
