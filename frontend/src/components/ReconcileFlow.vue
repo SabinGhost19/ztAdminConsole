@@ -38,6 +38,52 @@ function statusIcon(status?: string) {
   return 'mdi-circle-outline'
 }
 
+// Stage metadata indexed by the stable IDs emitted by the backend
+// integrity_service. `source` says where the work originates (CI = GitHub
+// Actions workflow producing artefacts, Admission = provenance-enforcer
+// webhook, Operator = zta-operator reconcile loop in-cluster). `tech` lists
+// the underlying tooling so the reader recognises GitHub Actions /
+// Cosign / Trivy / OPA / Falco at a glance.
+type StageMeta = { icon: string; source: 'CI' | 'Admission' | 'Operator'; tech: string }
+const STAGE_META: Record<string, StageMeta> = {
+  manifest:        { icon: 'mdi-file-document-check-outline', source: 'Operator',  tech: 'kube-apiserver · CRD validation' },
+  provenance:      { icon: 'mdi-shield-key-outline',           source: 'Admission', tech: 'VBBI voucher · HMAC chain · Merkle (RFC 6962)' },
+  'supply-chain':  { icon: 'mdi-shield-search',                source: 'CI',        tech: 'Cosign keyless · Trivy CVE gate' },
+  attestation:     { icon: 'mdi-certificate-outline',          source: 'CI',        tech: 'SLSA v1.0 · SBOM (SPDX) · OpenVEX · policy attestation' },
+  'resource-plan': { icon: 'mdi-clipboard-list-outline',       source: 'Operator',  tech: 'Manifest analysis · Istio/Falco/Talon detection' },
+  provisioning:    { icon: 'mdi-rocket-launch-outline',        source: 'Operator',  tech: 'Deployment · Service · NetworkPolicy · AuthorizationPolicy' },
+  runtime:         { icon: 'mdi-shield-lock-outline',          source: 'Operator',  tech: 'Falco rules · Talon kill-switch · WasmPlugin' },
+  ready:           { icon: 'mdi-check-decagram-outline',       source: 'Operator',  tech: 'securityState + trustLevel exposed to dashboard' },
+}
+
+function stageIcon(stage: any): string {
+  return STAGE_META[stage?.id as string]?.icon || 'mdi-circle-outline'
+}
+function stageSource(stage: any): string {
+  return STAGE_META[stage?.id as string]?.source || 'Operator'
+}
+function stageTech(stage: any): string {
+  return STAGE_META[stage?.id as string]?.tech || ''
+}
+
+function formatDuration(ms?: number | null): string {
+  if (!ms || ms <= 0) return ''
+  if (ms < 1000) return `${ms} ms`
+  const seconds = ms / 1000
+  if (seconds < 60) return `${seconds.toFixed(seconds < 10 ? 1 : 0)}s`
+  const minutes = Math.floor(seconds / 60)
+  const rem = Math.floor(seconds % 60)
+  return rem ? `${minutes}m ${rem}s` : `${minutes}m`
+}
+
+function stageDuration(stage: any): string {
+  // Prefer an explicit aggregate from backend; otherwise sum subtask durations.
+  if (typeof stage?.durationMs === 'number') return formatDuration(stage.durationMs)
+  const tasks = Array.isArray(stage?.subtasks) ? stage.subtasks : []
+  const sum = tasks.reduce((acc: number, t: any) => acc + (Number(t?.durationMs) || 0), 0)
+  return formatDuration(sum)
+}
+
 // Retry visibility — same logic as before; the operator may leave the flow
 // in a terminal failure state that the user can re-trigger manually.
 const showRetry = computed(() => {
@@ -106,16 +152,33 @@ function toggleStage(id: string) {
         >
           <span class="gh-stage-icon" :class="`tone-${tone(stage.status)}`">
             <v-icon v-if="stage.status === 'running'" size="18" class="spin">mdi-loading</v-icon>
-            <v-icon v-else size="18">{{ statusIcon(stage.status) }}</v-icon>
+            <v-icon
+              v-else-if="stage.status === 'success' || stage.status === 'failed' || stage.status === 'warning' || stage.status === 'skipped'"
+              size="18"
+            >{{ statusIcon(stage.status) }}</v-icon>
+            <v-icon v-else size="18">{{ stageIcon(stage) }}</v-icon>
           </span>
 
           <span class="gh-stage-body">
-            <span class="gh-stage-title">{{ stage.title }}</span>
+            <span class="gh-stage-headline">
+              <span class="gh-stage-title">{{ stage.title }}</span>
+              <span class="gh-stage-source" :class="`src-${stageSource(stage).toLowerCase()}`">
+                {{ stageSource(stage) }}
+              </span>
+            </span>
+            <span v-if="stageTech(stage)" class="gh-stage-tech">
+              <v-icon size="11" class="mr-1">{{ stageIcon(stage) }}</v-icon>{{ stageTech(stage) }}
+            </span>
             <span v-if="stage.description" class="gh-stage-sub">{{ stage.description }}</span>
           </span>
 
-          <span class="gh-stage-status" :class="`tone-${tone(stage.status)}`">
-            {{ statusLabel(stage.status) }}
+          <span class="gh-stage-meta">
+            <span v-if="stageDuration(stage)" class="gh-stage-duration">
+              <v-icon size="11">mdi-timer-outline</v-icon>{{ stageDuration(stage) }}
+            </span>
+            <span class="gh-stage-status" :class="`tone-${tone(stage.status)}`">
+              {{ statusLabel(stage.status) }}
+            </span>
           </span>
 
           <v-icon
@@ -150,6 +213,9 @@ function toggleStage(id: string) {
                   <div class="gh-log-title">{{ task.title }}</div>
                   <div v-if="task.detail" class="gh-log-detail">{{ task.detail }}</div>
                 </div>
+                <span v-if="formatDuration(task.durationMs)" class="gh-log-duration">
+                  {{ formatDuration(task.durationMs) }}
+                </span>
               </div>
             </div>
             <div v-else class="gh-log-empty">
@@ -281,7 +347,7 @@ function toggleStage(id: string) {
   position: relative;
   z-index: 1;
   display: grid;
-  grid-template-columns: 28px 1fr auto auto;
+  grid-template-columns: 28px 1fr auto 18px;
   align-items: center;
   gap: 12px;
   width: 100%;
@@ -320,6 +386,13 @@ function toggleStage(id: string) {
   display: flex;
   flex-direction: column;
   min-width: 0;
+  gap: 2px;
+}
+.gh-stage-headline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 .gh-stage-title {
   font-size: 13px;
@@ -327,11 +400,52 @@ function toggleStage(id: string) {
   color: var(--gh-fg);
   line-height: 1.3;
 }
+.gh-stage-source {
+  display: inline-flex;
+  align-items: center;
+  font-size: 9.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  padding: 1px 6px;
+  border-radius: 4px;
+  border: 1px solid var(--gh-border);
+  color: var(--gh-fg-muted);
+  background: rgba(255, 255, 255, 0.02);
+}
+.gh-stage-source.src-ci         { color: var(--gh-info);    border-color: rgba(88, 166, 255, 0.45); }
+.gh-stage-source.src-admission  { color: var(--gh-warning); border-color: rgba(210, 153, 34, 0.45); }
+.gh-stage-source.src-operator   { color: var(--gh-success); border-color: rgba(63, 185, 80, 0.45); }
+.gh-stage-tech {
+  display: flex;
+  align-items: center;
+  font-size: 11.5px;
+  color: var(--gh-fg-muted);
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  letter-spacing: 0.01em;
+  line-height: 1.35;
+}
 .gh-stage-sub {
-  font-size: 12px;
+  font-size: 11.5px;
   color: var(--gh-fg-muted);
   line-height: 1.4;
-  margin-top: 2px;
+  opacity: 0.85;
+}
+
+.gh-stage-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+.gh-stage-duration {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 11px;
+  color: var(--gh-fg-muted);
+  font-variant-numeric: tabular-nums;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
 }
 
 .gh-stage-status {
@@ -393,7 +507,7 @@ function toggleStage(id: string) {
 
 .gh-log-row {
   display: grid;
-  grid-template-columns: 36px 18px 1fr;
+  grid-template-columns: 36px 18px 1fr auto;
   align-items: flex-start;
   gap: 10px;
   padding: 8px 12px;
@@ -448,6 +562,16 @@ function toggleStage(id: string) {
   font-size: 12px;
   color: var(--gh-fg-muted);
   font-style: italic;
+}
+
+.gh-log-duration {
+  align-self: flex-start;
+  margin-top: 2px;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 11px;
+  color: var(--gh-fg-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 /* --- Animations ---------------------------------------------------- */

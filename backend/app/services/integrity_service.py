@@ -508,10 +508,20 @@ def _build_stage_subtasks(
         by the operator; fall back to legacy regex-derived status."""
         entry = verifications.get(key) if isinstance(verifications, dict) else None
         if isinstance(entry, dict) and ("passed" in entry):
-            return {
+            payload = {
                 "status": "success" if bool(entry.get("passed")) else "failed",
                 "detail": str(entry.get("reason") or "") or legacy_detail,
             }
+            # Surface the operator-measured duration so the dashboard can
+            # render "1.4s / 38s" timings next to each verification, exactly
+            # like a GitHub Actions step.
+            try:
+                duration_ms = int(entry.get("durationMs") or entry.get("duration_ms") or 0)
+                if duration_ms > 0:
+                    payload["durationMs"] = duration_ms
+            except (TypeError, ValueError):
+                pass
+            return payload
         return {"status": legacy_status, "detail": legacy_detail}
 
     if stage_id == "supply-chain":

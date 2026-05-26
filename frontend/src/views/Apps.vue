@@ -10,10 +10,8 @@ import ReconcileFlow from '../components/ReconcileFlow.vue'
 import EventsTimelinePanel from '../components/EventsTimelinePanel.vue'
 import VerificationStatusTable from '../components/VerificationStatusTable.vue'
 import CelEvaluationsTable from '../components/CelEvaluationsTable.vue'
-import BlastRadiusPanel from '../components/BlastRadiusPanel.vue'
 import ErrorLogPanel from '../components/ErrorLogPanel.vue'
 import SbomTree from '../components/SbomTree.vue'
-import VexExemptionsTable from '../components/VexExemptionsTable.vue'
 import { useNotificationStore } from '../store/notification'
 import { useDashboardStore } from '../store/dashboard'
 import { useAuthStore } from '../store/auth'
@@ -413,30 +411,6 @@ function isIntegrityFlowStable(payload: any): boolean {
 }
 
 const selectedAppSummary = computed(() => integrityDetails.value?.application?.summary || {})
-
-const vexExemptedCveIds = computed<string[]>(() => {
-  return (selectedAppSummary.value?.vex?.exemptedCveIds || []) as string[]
-})
-
-const trivyFindings = computed(() => {
-  // The backend now surfaces details.vulnerabilities under integrityDetails;
-  // fall back gracefully if the field name differs to keep this resilient
-  // to future serializer changes.
-  const details = integrityDetails.value || {}
-  const raw =
-    details.vulnerabilities
-    || details.application?.status?.attestations?.trivyFindings
-    || []
-  return (raw as any[]).map((row) => ({
-    cveId: row.cveId || row.VulnerabilityID || row.vulnerabilityID || '',
-    severity: row.severity || row.Severity || 'UNKNOWN',
-    packageName: row.packageName || row.PkgName || '',
-    packageVersion: row.packageVersion || row.InstalledVersion || '',
-    fixedVersion: row.fixedVersion || row.FixedVersion || '',
-    vexStatus: row.vexStatus || row.VexStatus || '',
-    vexJustification: row.vexJustification || '',
-  })).filter((row) => row.cveId)
-})
 
 const integrityCriticalIssues = computed(() => {
   const details = integrityDetails.value
@@ -1199,13 +1173,6 @@ function submitDeclaration() {
         <CelEvaluationsTable :evaluations="integrityDetails.application?.summary?.celEvaluations" />
       </div>
 
-      <div class="dashboard-panel span-12">
-        <BlastRadiusPanel
-          :image="selectedAppSummary?.image"
-          :candidate-cves="trivyFindings.map((f) => f.cveId)"
-        />
-      </div>
-
       <div class="dashboard-panel span-7-lg span-12-sm">
         <BuildLedgerGraph :nodes="integrityDetails.revalidation?.ledgerNodes || []" :status="integrityDetails.revalidation?.status" />
       </div>
@@ -1215,60 +1182,6 @@ function submitDeclaration() {
 
       <div class="dashboard-panel span-12">
         <SbomTree :groups="integrityDetails.sbomTree || []" />
-      </div>
-
-      <div class="dashboard-panel span-12">
-        <VexExemptionsTable
-          :findings="trivyFindings"
-          :exempted-cve-ids="vexExemptedCveIds"
-        />
-      </div>
-
-      <div class="dashboard-panel span-7-lg span-12-sm" v-if="selectedAppSummary?.merkle">
-        <v-card class="gc-border panel-card" flat>
-          <v-card-title class="text-primary panel-title">
-            <v-icon start size="small" color="primary">mdi-merge</v-icon>
-            VBBI Merkle Tree
-          </v-card-title>
-          <v-card-text class="panel-content">
-            <div class="d-flex align-center ga-2 flex-wrap mb-2">
-              <v-chip size="small"
-                :color="selectedAppSummary.merkle.rfc6962 ? 'success' : 'warning'"
-                variant="tonal"
-                :prepend-icon="selectedAppSummary.merkle.rfc6962 ? 'mdi-shield-lock' : 'mdi-alert'"
-              >
-                {{ selectedAppSummary.merkle.algorithm || 'plain-sha256' }} (v{{ selectedAppSummary.merkle.version }})
-              </v-chip>
-              <v-chip size="small" variant="outlined">leaves: {{ selectedAppSummary.merkle.leafCount ?? '?' }}</v-chip>
-            </div>
-            <div class="text-caption text-medium-emphasis mb-2">
-              <span v-if="selectedAppSummary.merkle.rfc6962">
-                Domain-separated hashing per RFC 6962 §2.1:
-                <code>SHA-256(0x00 ‖ leaf)</code> / <code>SHA-256(0x01 ‖ left ‖ right)</code>.
-                Previne atacuri second-preimage prin separarea spațiilor de hashing
-                pentru frunze vs noduri interne.
-              </span>
-              <span v-else>
-                Voucher legacy fără separare de domeniu — re-execută pipeline-ul pentru
-                a obține un Merkle tree v2 (RFC 6962).
-              </span>
-            </div>
-            <div class="forensic-item">
-              <div class="forensic-label">Root hash</div>
-              <div class="forensic-value font-mono" style="word-break: break-all;">
-                {{ selectedAppSummary.merkle.rootHash || 'unavailable' }}
-              </div>
-            </div>
-            <div class="forensic-item mt-2" v-if="selectedAppSummary.voucher?.slsaLevel">
-              <div class="forensic-label">SLSA level declared by VBBI</div>
-              <div class="forensic-value">{{ selectedAppSummary.voucher.slsaLevel }}</div>
-            </div>
-            <div class="forensic-item" v-if="selectedAppSummary.voucher?.hmacChainProvider">
-              <div class="forensic-label">HMAC chain provider</div>
-              <div class="forensic-value">{{ selectedAppSummary.voucher.hmacChainProvider }}</div>
-            </div>
-          </v-card-text>
-        </v-card>
       </div>
 
       <div class="dashboard-panel span-5-lg span-12-sm" v-if="selectedAppSummary?.guacIngestion">
