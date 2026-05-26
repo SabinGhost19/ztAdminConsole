@@ -705,6 +705,7 @@ def _build_stage_subtasks(
 async def _build_runtime_forensics(application: dict[str, Any]) -> dict[str, Any]:
     metadata = application.get("metadata", {}) or {}
     spec = application.get("spec", {}) or {}
+    status = application.get("status", {}) or {}
     namespace = str(metadata.get("namespace", "default"))
     name = str(metadata.get("name", ""))
     local_configmap_name = f"falco-rule-{name}"
@@ -713,6 +714,7 @@ async def _build_runtime_forensics(application: dict[str, Any]) -> dict[str, Any
 
     local_rule = None
     talon_rules = None
+    talon_cm_missing = False
     try:
         logger.info("Reading local Falco rule ConfigMap", extra={"details": {"namespace": namespace, "name": local_configmap_name}})
         local_cm = await core.read_namespaced_config_map(name=local_configmap_name, namespace=namespace)
@@ -724,8 +726,36 @@ async def _build_runtime_forensics(application: dict[str, Any]) -> dict[str, Any
         logger.info("Reading Talon ConfigMap", extra={"details": {"namespace": TALON_NAMESPACE, "name": TALON_CONFIGMAP_NAME, "key": TALON_CONFIGMAP_KEY}})
         talon_cm = await core.read_namespaced_config_map(name=TALON_CONFIGMAP_NAME, namespace=TALON_NAMESPACE)
         talon_rules = (talon_cm.data or {}).get(TALON_CONFIGMAP_KEY)
-    except client.exceptions.ApiException:
+    except client.exceptions.ApiException as exc:
         talon_rules = None
+        if int(getattr(exc, "status", 0) or 0) == 404:
+            talon_cm_missing = True
+
+    # Pull the operator-authored status block. When the operator hits a
+    # missing Falco/Talon stack at provisioning time, it sets
+    # status.runtimeEnforcement.{installed:false, missing:[...]}. We pass
+    # that through verbatim so the UI can render an informational banner
+    # distinct from "rule expected but not patched".
+    runtime_enforcement = status.get("runtimeEnforcement", {}) or {}
+    requested = bool(spec.get("runtimeSecurity"))
+    # Heuristic fallback for older operators that don't write the field.
+    if "installed" not in runtime_enforcement:
+        if requested and talon_cm_missing:
+            runtime_enforcement = {
+                "requested": True,
+                "installed": False,
+                "talonRulePatched": False,
+                "missing": [f"ConfigMap {TALON_NAMESPACE}/{TALON_CONFIGMAP_NAME}"],
+                "reason": "Talon ConfigMap not found (Falco/Talon Helm charts not installed).",
+            }
+        else:
+            runtime_enforcement = {
+                "requested": requested,
+                "installed": None,
+                "talonRulePatched": bool(talon_rules and expected_rule_name in talon_rules),
+                "missing": [],
+                "reason": "",
+            }
 
     return {
         "allowedPaths": ((spec.get("runtimeSecurity", {}) or {}).get("allowedPaths", []) or []),
@@ -737,6 +767,14 @@ async def _build_runtime_forensics(application: dict[str, Any]) -> dict[str, Any
         "talonRuleReference": expected_rule_name,
         "talonRulePresent": bool(talon_rules and expected_rule_name in talon_rules),
         "talonRulesSnippet": talon_rules,
+        # New: structured Falco/Talon infrastructure availability info.
+        "infrastructure": {
+            "requested": bool(runtime_enforcement.get("requested", requested)),
+            "installed": runtime_enforcement.get("installed"),
+            "missing": list(runtime_enforcement.get("missing", []) or []),
+            "reason": str(runtime_enforcement.get("reason", "") or ""),
+            "talonRulePatched": bool(runtime_enforcement.get("talonRulePatched", False)),
+        },
     }
 
 

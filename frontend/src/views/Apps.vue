@@ -1314,6 +1314,49 @@ function submitDeclaration() {
             Runtime Forensics
           </v-card-title>
           <v-card-text class="panel-content">
+            <!--
+              Infrastructure banner: when Falco+Talon Helm charts are not
+              installed at all, missing chips below would otherwise look
+              like a security failure. This banner makes it explicit that
+              the rest of the supply-chain succeeded; only the optional
+              runtime-enforcement layer is unavailable.
+            -->
+            <v-alert
+              v-if="integrityDetails.runtimeForensics?.infrastructure?.requested
+                    && integrityDetails.runtimeForensics?.infrastructure?.installed === false"
+              type="info"
+              variant="tonal"
+              density="compact"
+              class="mb-3"
+              icon="mdi-shield-off-outline"
+            >
+              <div class="text-body-2 font-weight-medium">
+                Runtime enforcement layer (Falco + Talon) is not installed in this cluster
+              </div>
+              <div class="text-caption mt-1">
+                {{ integrityDetails.runtimeForensics.infrastructure.reason
+                   || 'The Talon ConfigMap was not found. The application is deployed and verified, but no runtime-isolation rule was patched.' }}
+              </div>
+              <div
+                v-if="(integrityDetails.runtimeForensics.infrastructure.missing || []).length"
+                class="d-flex flex-wrap ga-1 mt-2"
+              >
+                <v-chip
+                  v-for="item in integrityDetails.runtimeForensics.infrastructure.missing"
+                  :key="item"
+                  size="x-small"
+                  variant="outlined"
+                  color="info"
+                >
+                  {{ item }}
+                </v-chip>
+              </div>
+              <div class="text-caption mt-2 text-medium-emphasis">
+                To enable: <code>helm install falco falcosecurity/falco -n falco --create-namespace</code> +
+                <code>helm install falco-talon falcosecurity/falco-talon -n falco-talon --create-namespace</code>
+              </div>
+            </v-alert>
+
             <div class="forensics-grid">
               <div class="forensic-item">
                 <div class="forensic-label">Falco ConfigMap</div>
@@ -1326,20 +1369,32 @@ function submitDeclaration() {
             </div>
             <div class="d-flex flex-wrap ga-2 mt-3">
               <v-chip
-                :color="integrityDetails.runtimeForensics?.localRulePresent ? 'success' : 'error'"
+                :color="integrityDetails.runtimeForensics?.infrastructure?.installed === false
+                          ? 'grey'
+                          : (integrityDetails.runtimeForensics?.localRulePresent ? 'success' : 'error')"
                 variant="tonal"
                 size="small"
-                :prepend-icon="integrityDetails.runtimeForensics?.localRulePresent ? 'mdi-check-circle' : 'mdi-close-circle'"
+                :prepend-icon="integrityDetails.runtimeForensics?.infrastructure?.installed === false
+                                 ? 'mdi-minus-circle-outline'
+                                 : (integrityDetails.runtimeForensics?.localRulePresent ? 'mdi-check-circle' : 'mdi-close-circle')"
               >
-                Local rule {{ integrityDetails.runtimeForensics?.localRulePresent ? 'present' : 'missing' }}
+                Local rule {{ integrityDetails.runtimeForensics?.infrastructure?.installed === false
+                                ? 'n/a (Falco not installed)'
+                                : (integrityDetails.runtimeForensics?.localRulePresent ? 'present' : 'missing') }}
               </v-chip>
               <v-chip
-                :color="integrityDetails.runtimeForensics?.talonRulePresent ? 'success' : 'error'"
+                :color="integrityDetails.runtimeForensics?.infrastructure?.installed === false
+                          ? 'grey'
+                          : (integrityDetails.runtimeForensics?.talonRulePresent ? 'success' : 'error')"
                 variant="tonal"
                 size="small"
-                :prepend-icon="integrityDetails.runtimeForensics?.talonRulePresent ? 'mdi-check-circle' : 'mdi-close-circle'"
+                :prepend-icon="integrityDetails.runtimeForensics?.infrastructure?.installed === false
+                                 ? 'mdi-minus-circle-outline'
+                                 : (integrityDetails.runtimeForensics?.talonRulePresent ? 'mdi-check-circle' : 'mdi-close-circle')"
               >
-                Talon {{ integrityDetails.runtimeForensics?.talonRulePresent ? 'patched' : 'not patched' }}
+                Talon {{ integrityDetails.runtimeForensics?.infrastructure?.installed === false
+                           ? 'n/a (Talon not installed)'
+                           : (integrityDetails.runtimeForensics?.talonRulePresent ? 'patched' : 'not patched') }}
               </v-chip>
             </div>
             <div class="mt-3">
