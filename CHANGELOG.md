@@ -1,3 +1,10 @@
+# [1.16.0](https://github.com/SabinGhost19/ztAdminConsole/compare/v1.15.0...v1.16.0) (2026-05-26)
+
+
+### Features
+
+* **ui:** show per-stage durations in Reconcile Pipeline ([5dea48f](https://github.com/SabinGhost19/ztAdminConsole/commit/5dea48f908a6077cc5cd7e17d8e4f6484de36440))
+
 # [1.15.0](https://github.com/SabinGhost19/ztAdminConsole/compare/v1.14.2...v1.15.0) (2026-05-26)
 
 
