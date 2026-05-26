@@ -440,6 +440,15 @@ def _build_reconcile_flow(application: dict[str, Any], policy: dict[str, Any] | 
         )
         if subtasks:
             stage_payload["subtasks"] = subtasks
+            # Aggregate any per-subtask operator-recorded durations into a
+            # stage-level total so the UI can render "Stage X · 1.4s" next
+            # to the title, matching GitHub Actions per-job timings.
+            try:
+                total_ms = sum(int(s.get("durationMs") or 0) for s in subtasks if s.get("durationMs"))
+                if total_ms > 0:
+                    stage_payload["durationMs"] = total_ms
+            except (TypeError, ValueError):
+                pass
         decorated.append(stage_payload)
 
     return {
@@ -628,26 +637,48 @@ def _build_stage_subtasks(
         # entry under status.verifications.slsaProvenance (enforced via SCA
         # slsaProvenancePolicy.enforceSlsa). Otherwise hidden so we don't
         # show a fake "pending" line for clusters that don't require SLSA.
+        def _with_duration(payload: dict, entry: dict) -> dict:
+            try:
+                d = int(entry.get("durationMs") or entry.get("duration_ms") or 0)
+                if d > 0:
+                    payload["durationMs"] = d
+            except (TypeError, ValueError):
+                pass
+            return payload
+
         slsa_entry = verifications.get("slsaProvenance") if isinstance(verifications, dict) else None
         if isinstance(slsa_entry, dict) and "passed" in slsa_entry:
-            out.append({
+            out.append(_with_duration({
                 "id": "slsa-provenance",
                 "title": "SLSA v1.0 Provenance",
                 "status": "success" if bool(slsa_entry.get("passed")) else "failed",
                 "detail": str(slsa_entry.get("reason") or "") or (
                     f"builder={slsa_entry.get('builderId', '')} buildType={slsa_entry.get('buildType', '')}"
                 ),
-            })
+            }, slsa_entry))
         openvex_entry = verifications.get("openvex") if isinstance(verifications, dict) else None
         if isinstance(openvex_entry, dict) and "passed" in openvex_entry:
-            out.append({
+            out.append(_with_duration({
                 "id": "openvex",
                 "title": "OpenVEX Signed Attestation",
                 "status": "success" if bool(openvex_entry.get("passed")) else "failed",
                 "detail": str(openvex_entry.get("reason") or "") or (
                     f"{openvex_entry.get('statementCount', 0)} statements"
                 ),
-            })
+            }, openvex_entry))
+        # Also propagate operator-recorded durations for the directly-built
+        # entries above (sbom, policy-attestation) where status.verifications
+        # carries them. We patch the already-appended dicts in place to keep
+        # the construction code readable.
+        for sub in out:
+            if "durationMs" in sub:
+                continue
+            key = {"sbom": "sbom", "policy-attestation": "policyAttestation"}.get(sub["id"])
+            if not key:
+                continue
+            entry = verifications.get(key) if isinstance(verifications, dict) else None
+            if isinstance(entry, dict):
+                _with_duration(sub, entry)
         return out
 
     if stage_id == "provisioning":

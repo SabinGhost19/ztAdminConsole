@@ -21,49 +21,12 @@ function tone(status?: string): Tone {
   return 'pending'
 }
 
-function statusLabel(status?: string) {
-  if (status === 'success') return 'Success'
-  if (status === 'failed') return 'Failed'
-  if (status === 'warning') return 'Warning'
-  if (status === 'running') return 'Running'
-  if (status === 'skipped') return 'Skipped'
-  return 'Pending'
-}
-
 function statusIcon(status?: string) {
   if (status === 'success') return 'mdi-check-circle'
   if (status === 'failed') return 'mdi-close-circle'
   if (status === 'warning') return 'mdi-alert'
   if (status === 'skipped') return 'mdi-skip-next-circle'
   return 'mdi-circle-outline'
-}
-
-// Stage metadata indexed by the stable IDs emitted by the backend
-// integrity_service. `source` says where the work originates (CI = GitHub
-// Actions workflow producing artefacts, Admission = provenance-enforcer
-// webhook, Operator = zta-operator reconcile loop in-cluster). `tech` lists
-// the underlying tooling so the reader recognises GitHub Actions /
-// Cosign / Trivy / OPA / Falco at a glance.
-type StageMeta = { icon: string; source: 'CI' | 'Admission' | 'Operator'; tech: string }
-const STAGE_META: Record<string, StageMeta> = {
-  manifest:        { icon: 'mdi-file-document-check-outline', source: 'Operator',  tech: 'kube-apiserver · CRD validation' },
-  provenance:      { icon: 'mdi-shield-key-outline',           source: 'Admission', tech: 'VBBI voucher · HMAC chain · Merkle (RFC 6962)' },
-  'supply-chain':  { icon: 'mdi-shield-search',                source: 'CI',        tech: 'Cosign keyless · Trivy CVE gate' },
-  attestation:     { icon: 'mdi-certificate-outline',          source: 'CI',        tech: 'SLSA v1.0 · SBOM (SPDX) · OpenVEX · policy attestation' },
-  'resource-plan': { icon: 'mdi-clipboard-list-outline',       source: 'Operator',  tech: 'Manifest analysis · Istio/Falco/Talon detection' },
-  provisioning:    { icon: 'mdi-rocket-launch-outline',        source: 'Operator',  tech: 'Deployment · Service · NetworkPolicy · AuthorizationPolicy' },
-  runtime:         { icon: 'mdi-shield-lock-outline',          source: 'Operator',  tech: 'Falco rules · Talon kill-switch · WasmPlugin' },
-  ready:           { icon: 'mdi-check-decagram-outline',       source: 'Operator',  tech: 'securityState + trustLevel exposed to dashboard' },
-}
-
-function stageIcon(stage: any): string {
-  return STAGE_META[stage?.id as string]?.icon || 'mdi-circle-outline'
-}
-function stageSource(stage: any): string {
-  return STAGE_META[stage?.id as string]?.source || 'Operator'
-}
-function stageTech(stage: any): string {
-  return STAGE_META[stage?.id as string]?.tech || ''
 }
 
 function formatDuration(ms?: number | null): string {
@@ -152,33 +115,13 @@ function toggleStage(id: string) {
         >
           <span class="gh-stage-icon" :class="`tone-${tone(stage.status)}`">
             <v-icon v-if="stage.status === 'running'" size="18" class="spin">mdi-loading</v-icon>
-            <v-icon
-              v-else-if="stage.status === 'success' || stage.status === 'failed' || stage.status === 'warning' || stage.status === 'skipped'"
-              size="18"
-            >{{ statusIcon(stage.status) }}</v-icon>
-            <v-icon v-else size="18">{{ stageIcon(stage) }}</v-icon>
+            <v-icon v-else size="18">{{ statusIcon(stage.status) }}</v-icon>
           </span>
 
-          <span class="gh-stage-body">
-            <span class="gh-stage-headline">
-              <span class="gh-stage-title">{{ stage.title }}</span>
-              <span class="gh-stage-source" :class="`src-${stageSource(stage).toLowerCase()}`">
-                {{ stageSource(stage) }}
-              </span>
-            </span>
-            <span v-if="stageTech(stage)" class="gh-stage-tech">
-              <v-icon size="11" class="mr-1">{{ stageIcon(stage) }}</v-icon>{{ stageTech(stage) }}
-            </span>
-            <span v-if="stage.description" class="gh-stage-sub">{{ stage.description }}</span>
-          </span>
+          <span class="gh-stage-title">{{ stage.title }}</span>
 
-          <span class="gh-stage-meta">
-            <span v-if="stageDuration(stage)" class="gh-stage-duration">
-              <v-icon size="11">mdi-timer-outline</v-icon>{{ stageDuration(stage) }}
-            </span>
-            <span class="gh-stage-status" :class="`tone-${tone(stage.status)}`">
-              {{ statusLabel(stage.status) }}
-            </span>
+          <span v-if="stageDuration(stage)" class="gh-stage-duration">
+            {{ stageDuration(stage) }}
           </span>
 
           <v-icon
@@ -250,7 +193,9 @@ function toggleStage(id: string) {
   border-radius: 12px;
   padding: 16px 18px;
   color: var(--gh-fg);
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji";
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
 }
 
 /* --- Header -------------------------------------------------------- */
@@ -382,88 +327,23 @@ function toggleStage(id: string) {
 .gh-stage-icon.tone-skipped { color: var(--gh-skipped); border-color: var(--gh-border); background: rgb(var(--v-theme-surface)); }
 .gh-stage-icon.tone-pending { color: var(--gh-fg-muted); border-color: var(--gh-border); }
 
-.gh-stage-body {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  gap: 2px;
-}
-.gh-stage-headline {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-}
 .gh-stage-title {
-  font-size: 13px;
-  font-weight: 600;
+  font-size: 14px;
+  font-weight: 400;
   color: var(--gh-fg);
-  line-height: 1.3;
-}
-.gh-stage-source {
-  display: inline-flex;
-  align-items: center;
-  font-size: 9.5px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  padding: 1px 6px;
-  border-radius: 4px;
-  border: 1px solid var(--gh-border);
-  color: var(--gh-fg-muted);
-  background: rgba(255, 255, 255, 0.02);
-}
-.gh-stage-source.src-ci         { color: var(--gh-info);    border-color: rgba(88, 166, 255, 0.45); }
-.gh-stage-source.src-admission  { color: var(--gh-warning); border-color: rgba(210, 153, 34, 0.45); }
-.gh-stage-source.src-operator   { color: var(--gh-success); border-color: rgba(63, 185, 80, 0.45); }
-.gh-stage-tech {
-  display: flex;
-  align-items: center;
-  font-size: 11.5px;
-  color: var(--gh-fg-muted);
-  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
-  letter-spacing: 0.01em;
-  line-height: 1.35;
-}
-.gh-stage-sub {
-  font-size: 11.5px;
-  color: var(--gh-fg-muted);
   line-height: 1.4;
-  opacity: 0.85;
-}
-
-.gh-stage-meta {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
+
 .gh-stage-duration {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--gh-fg-muted);
   font-variant-numeric: tabular-nums;
-  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
-}
-
-.gh-stage-status {
-  font-size: 11px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  padding: 2px 8px;
-  border-radius: 999px;
-  border: 1px solid transparent;
   white-space: nowrap;
 }
-.gh-stage-status.tone-success { color: var(--gh-success); border-color: rgba(63, 185, 80, 0.4);  background: rgba(63, 185, 80, 0.1); }
-.gh-stage-status.tone-error   { color: var(--gh-error);   border-color: rgba(248, 81, 73, 0.4);  background: rgba(248, 81, 73, 0.1); }
-.gh-stage-status.tone-warning { color: var(--gh-warning); border-color: rgba(210, 153, 34, 0.4); background: rgba(210, 153, 34, 0.1); }
-.gh-stage-status.tone-running { color: var(--gh-info);    border-color: rgba(88, 166, 255, 0.4); background: rgba(88, 166, 255, 0.1); }
-.gh-stage-status.tone-skipped { color: var(--gh-skipped); border-color: var(--gh-border);        background: transparent; }
-.gh-stage-status.tone-pending { color: var(--gh-fg-muted); border-color: var(--gh-border);       background: transparent; }
 
 .gh-chevron {
   color: var(--gh-fg-muted);
