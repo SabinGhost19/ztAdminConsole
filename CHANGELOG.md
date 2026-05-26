@@ -1,3 +1,10 @@
+# [1.15.0](https://github.com/SabinGhost19/ztAdminConsole/compare/v1.14.2...v1.15.0) (2026-05-26)
+
+
+### Features
+
+* graceful Falco/Talon missing detection across operator → backend → UI ([4ed1d5f](https://github.com/SabinGhost19/ztAdminConsole/commit/4ed1d5fd47e530f842a83439eea336dc4868dad7))
+
 ## [1.14.2](https://github.com/SabinGhost19/ztAdminConsole/compare/v1.14.1...v1.14.2) (2026-05-25)
 
 
