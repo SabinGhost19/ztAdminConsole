@@ -162,7 +162,10 @@ function toggleStage(id: string) {
               </div>
             </div>
             <div v-else class="gh-log-empty">
-              No sub-step forensics available for this stage.
+              {{ stage.description || stage.message
+                 || (stage.status === 'pending'
+                      ? 'Waiting for earlier stages to complete before this one runs.'
+                      : 'Completed — no per-check sub-steps are recorded for this stage.') }}
             </div>
           </div>
         </transition>

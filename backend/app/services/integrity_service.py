@@ -13,7 +13,9 @@ from app.services.provenance_revalidation import RevalidationError, revalidate_v
 from app.services.k8s_scanner import SCA_PLURAL, ZTA_PLURAL, ZTS_PLURAL, scanner
 from app.services.serializers import serialize_sca_resource, serialize_zta_resource, serialize_zts_resource
 
-TALON_NAMESPACE = os.getenv("TALON_NAMESPACE", "falco-talon")
+# Default namespace where falco-talon (and the operator-patched rules ConfigMap)
+# live. The operator's chart default is `falco`; override via TALON_NAMESPACE.
+TALON_NAMESPACE = os.getenv("TALON_NAMESPACE", "falco")
 TALON_CONFIGMAP_NAME = os.getenv("TALON_CONFIGMAP_NAME", "falco-talon-rules")
 TALON_CONFIGMAP_KEY = os.getenv("TALON_CONFIGMAP_KEY", "rules.yaml")
 logger = logging.getLogger("zero_trust_integrity_service")

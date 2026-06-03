@@ -44,6 +44,46 @@ function formatTime(ts?: string): string {
   if (!ts) return ''
   try { return new Date(ts).toLocaleString() } catch { return ts }
 }
+
+function sevColor(sev?: string): string {
+  switch (String(sev || '').toUpperCase()) {
+    case 'CRITICAL': return 'error'
+    case 'HIGH': return 'deep-orange'
+    case 'MEDIUM': return 'warning'
+    case 'LOW': return 'info'
+    default: return 'grey'
+  }
+}
+
+// Non-zero severity counts as [sev, n] pairs, highest-first.
+function severityCounts(entry?: VerificationEntry): [string, number][] {
+  const c = entry?.counts || {}
+  return (['CRITICAL', 'HIGH', 'MEDIUM', 'LOW'] as const)
+    .map((s) => [s, Number(c[s] || 0)] as [string, number])
+    .filter(([, n]) => n > 0)
+}
+
+// Authoritative detail page for a finding: prefer Trivy's PrimaryURL, then NVD
+// (CVE), GitHub Advisories (GHSA), else the OSV.dev aggregator.
+function cveUrl(f: any): string {
+  const url = String(f?.primaryUrl || '').trim()
+  if (url) return url
+  const id = String(f?.id || '').trim()
+  if (/^CVE-/i.test(id)) return `https://nvd.nist.gov/vuln/detail/${id}`
+  if (/^GHSA-/i.test(id)) return `https://github.com/advisories/${id}`
+  if (id) return `https://osv.dev/vulnerability/${id}`
+  return ''
+}
+
+// A friendlier one-liner for the technical reason codes.
+function reasonLabel(entry?: VerificationEntry): string {
+  if (!entry) return '—'
+  const r = String(entry.reason || (entry.passed ? 'ok' : 'failed'))
+  if (r === 'trivy-fixable-vulnerability-found') return 'Fixable CVEs found (policy fails on fixable)'
+  if (r === 'trivy-threshold-exceeded') return `Severity ${entry.highest} exceeds allowed ${entry.threshold}`
+  if (r === 'trivy-scan-failed') return 'Trivy scan could not run'
+  return r
+}
 </script>
 
 <template>
@@ -73,8 +113,37 @@ function formatTime(ts?: string): string {
                 {{ statusLabel(row.entry) }}
               </v-chip>
             </td>
-            <td class="text-caption">
-              {{ row.entry?.reason || (row.entry ? 'ok' : '—') }}
+            <td class="text-caption" style="min-width: 280px">
+              <div>{{ reasonLabel(row.entry) }}</div>
+
+              <!-- severity counts (Trivy) -->
+              <div v-if="severityCounts(row.entry).length" class="d-flex ga-1 mt-1 flex-wrap">
+                <v-chip
+                  v-for="[sev, n] in severityCounts(row.entry)"
+                  :key="sev" :color="sevColor(sev)" size="x-small" variant="flat"
+                >{{ sev.toLowerCase() }} {{ n }}</v-chip>
+                <span v-if="row.entry?.vexExempted?.length" class="text-disabled ml-1 align-self-center">
+                  ({{ row.entry.vexExempted.length }} VEX-exempted)
+                </span>
+              </div>
+
+              <!-- per-CVE findings (Trivy) -->
+              <ul v-if="row.entry?.findings?.length" class="gc-findings mt-1">
+                <li v-for="(f, i) in row.entry.findings.slice(0, 8)" :key="i">
+                  <v-chip :color="sevColor(f.severity)" size="x-small" variant="flat" class="mr-1">{{ String(f.severity || '').toLowerCase() }}</v-chip>
+                  <a
+                    v-if="cveUrl(f)"
+                    :href="cveUrl(f)" target="_blank" rel="noopener noreferrer"
+                    class="font-mono gc-cve-link"
+                  >{{ f.id }}<v-icon size="11" class="ml-1">mdi-open-in-new</v-icon></a>
+                  <span v-else class="font-mono">{{ f.id }}</span>
+                  <span class="text-medium-emphasis"> — {{ f.pkg }} {{ f.installed }}</span>
+                  <span v-if="f.fixedVersion" class="text-success"> → fixed in {{ f.fixedVersion }}</span>
+                </li>
+                <li v-if="row.entry.findings.length > 8" class="text-disabled">
+                  +{{ row.entry.findings.length - 8 }} more…
+                </li>
+              </ul>
             </td>
             <td class="text-caption text-medium-emphasis">{{ formatTime(row.entry?.completedAt) }}</td>
           </tr>
@@ -83,3 +152,21 @@ function formatTime(ts?: string): string {
     </v-card-text>
   </v-card>
 </template>
+
+<style scoped>
+.gc-findings {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.gc-findings li {
+  padding: 1px 0;
+  line-height: 1.6;
+}
+.font-mono { font-family: 'Roboto Mono', monospace; }
+.gc-cve-link {
+  color: rgb(var(--v-theme-info));
+  text-decoration: none;
+}
+.gc-cve-link:hover { text-decoration: underline; }
+</style>
