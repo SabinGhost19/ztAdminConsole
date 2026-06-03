@@ -1,3 +1,10 @@
+# [1.17.0](https://github.com/SabinGhost19/ztAdminConsole/compare/v1.16.0...v1.17.0) (2026-06-03)
+
+
+### Features
+
+* **supply-chain:** add OSS Snyk-style security-scan attestation flow ([3f69b55](https://github.com/SabinGhost19/ztAdminConsole/commit/3f69b556fccbc41df1b9b8bd5fa08b3023e9e8d5))
+
 # [1.16.0](https://github.com/SabinGhost19/ztAdminConsole/compare/v1.15.0...v1.16.0) (2026-05-26)
 
 
