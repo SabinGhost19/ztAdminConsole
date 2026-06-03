@@ -1,3 +1,10 @@
+## [1.17.1](https://github.com/SabinGhost19/ztAdminConsole/compare/v1.17.0...v1.17.1) (2026-06-03)
+
+
+### Bug Fixes
+
+* **manifests:** enforce securityScanPolicy on payments + analytics SCAs ([901d170](https://github.com/SabinGhost19/ztAdminConsole/commit/901d1707dc1af86cb0cf4ef704b99e8f9c17bf21))
+
 # [1.17.0](https://github.com/SabinGhost19/ztAdminConsole/compare/v1.16.0...v1.17.0) (2026-06-03)
 
 
