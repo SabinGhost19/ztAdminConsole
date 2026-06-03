@@ -666,6 +666,20 @@ def _build_stage_subtasks(
                     f"{openvex_entry.get('statementCount', 0)} statements"
                 ),
             }, openvex_entry))
+        # OSS security-scan (gitleaks/checkov/semgrep) — surfaced only if the
+        # operator recorded status.verifications.securityScan (securityScanPolicy).
+        secscan_entry = verifications.get("securityScan") if isinstance(verifications, dict) else None
+        if isinstance(secscan_entry, dict) and "passed" in secscan_entry:
+            out.append(_with_duration({
+                "id": "security-scan",
+                "title": "Security Scan (gitleaks/checkov/semgrep)",
+                "status": "success" if bool(secscan_entry.get("passed")) else "failed",
+                "detail": str(secscan_entry.get("reason") or "") or (
+                    f"secrets={secscan_entry.get('secretsTotal', 0)} "
+                    f"iac<={secscan_entry.get('iacHighest', 'NONE')} "
+                    f"sast<={secscan_entry.get('sastHighest', 'NONE')}"
+                ),
+            }, secscan_entry))
         # Also propagate operator-recorded durations for the directly-built
         # entries above (sbom, policy-attestation) where status.verifications
         # carries them. We patch the already-appended dicts in place to keep

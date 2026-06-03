@@ -87,6 +87,11 @@ ingress:
   enabled: true
   className: "nginx"
   annotations:
+    # cert-manager auto-issues the TLS cert for the host below via Let's Encrypt
+    # HTTP-01; nginx redirects all plain HTTP to HTTPS.
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
     # Keycloak access tokens with embedded group claims can easily exceed
     # the default 8k buffer; bump it so the upstream (nginx in the
     # frontend pod) doesn't reject them with 502.
@@ -95,10 +100,15 @@ ingress:
     # Keep the Authorization header end-to-end.
     nginx.ingress.kubernetes.io/upstream-vhost: "$service_name.$namespace.svc.cluster.local"
   hosts:
-    - host: dashboard.devsecops.licenta.ro
+    - host: dashboard.ggdevs.site
       paths:
         - path: /
           pathType: Prefix
+  # cert-manager writes the issued cert here; the Ingress serves TLS from it.
+  tls:
+    - hosts:
+        - dashboard.ggdevs.site
+      secretName: dashboard-ggdevs-site-tls
 
 serviceAccount:
   create: true
