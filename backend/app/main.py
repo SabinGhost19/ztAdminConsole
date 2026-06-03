@@ -17,6 +17,7 @@ from app.api import (
     jit_routes,
     overview_routes,
     sca_routes,
+    security_scan_routes,
     system_routes,
     zta_routes,
     zts_routes,
@@ -253,6 +254,12 @@ app.include_router(
     drift_routes.router,
     prefix="/api/v1/drift",
     tags=["ZTA Drift Analyzer"],
+    dependencies=[_Depends(_req(_p.P_SECURITY_READ))],
+)
+app.include_router(
+    security_scan_routes.router,
+    prefix="/api/v1/security-scans",
+    tags=["Security Scan (gitleaks/checkov/semgrep)"],
     dependencies=[_Depends(_req(_p.P_SECURITY_READ))],
 )
 app.include_router(

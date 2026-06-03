@@ -89,6 +89,15 @@ const routes: RouteRecordRaw[] = [
     },
   },
   {
+    path: '/security-scans',
+    name: 'Security Scans',
+    component: () => import('../views/SecurityScans.vue'),
+    meta: {
+      requiresPermission: ['security:read'],
+      title: 'Security Scans (gitleaks/checkov/semgrep)',
+    },
+  },
+  {
     path: '/break-glass',
     name: 'Break-Glass (eBPF Honeypot)',
     component: () => import('../views/BreakGlass.vue'),

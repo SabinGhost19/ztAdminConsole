@@ -17,6 +17,8 @@ export const useDashboardStore = defineStore('dashboard', {
     loadingPolicies: false,
     driftItems: [] as AnyRecord[],
     loadingDrift: false,
+    securityScans: null as AnyRecord | null,
+    loadingSecurityScans: false,
     loadingIntegrity: false,
     integrityCache: {} as Record<string, AnyRecord>,
   }),
@@ -157,6 +159,20 @@ export const useDashboardStore = defineStore('dashboard', {
         return response.data
       } finally {
         this.loadingDrift = false
+      }
+    },
+    async fetchSecurityScans(force = false) {
+      if (this.securityScans && !force) {
+        return this.securityScans
+      }
+
+      this.loadingSecurityScans = true
+      try {
+        const response = await api.get('/security-scans/')
+        this.securityScans = response.data
+        return response.data
+      } finally {
+        this.loadingSecurityScans = false
       }
     },
     async fetchIntegrity(namespace: string, name: string, force = false) {

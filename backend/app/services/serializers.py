@@ -139,6 +139,28 @@ def serialize_zta_resource(item: dict[str, Any]) -> dict[str, Any]:
     vex_exempted = attestations.get("vexExempted", []) or []
     cel_evaluations = attestations.get("celEvaluations", []) or []
 
+    # OSS security-scan attestation (gitleaks/checkov/semgrep aggregate).
+    verifications = status.get("verifications", {}) or {}
+    security_scan_verif = verifications.get("securityScan", {}) or {}
+    security_scan_summary = attestations.get("securityScanSummary", {}) or {}
+    security_scan_findings = attestations.get("securityScanFindings", []) or []
+    security_scan = {
+        "verified": bool(security_scan_verif.get("passed", False)),
+        "reason": str(security_scan_verif.get("reason", "") or ""),
+        "gating": str(attestations.get("securityScanGating", "") or ""),
+        "commit": str(attestations.get("securityScanCommit", "") or ""),
+        "completedAt": security_scan_verif.get("completedAt"),
+        "secretsTotal": security_scan_verif.get("secretsTotal", 0),
+        "iacHighest": security_scan_verif.get("iacHighest", "NONE"),
+        "sastHighest": security_scan_verif.get("sastHighest", "NONE"),
+        "findingsCount": security_scan_verif.get(
+            "findingsCount", len(security_scan_findings) if isinstance(security_scan_findings, list) else 0
+        ),
+        "summary": security_scan_summary,
+        "findings": security_scan_findings,
+        "enforced": bool(security_scan_verif),
+    }
+
     guac_ingestion = {
         "status": str(status.get("guacIngestionStatus", "") or ""),
         "message": str(status.get("guacIngestionMessage", "") or ""),
@@ -194,6 +216,7 @@ def serialize_zta_resource(item: dict[str, Any]) -> dict[str, Any]:
             },
             "celEvaluations": cel_evaluations,
             "guacIngestion": guac_ingestion,
+            "securityScan": security_scan,
         },
     }
 

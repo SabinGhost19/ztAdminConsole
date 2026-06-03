@@ -75,6 +75,7 @@ const allMenuItems: MenuItem[] = [
   { title: 'Supply Chain (SCA)', icon: 'mdi-shield-link-variant', path: '/sca', requires: ['sca:read'] },
   { title: 'Security Posture', icon: 'mdi-radar', path: '/security', requires: ['security:read'] },
   { title: 'Blast Radius (GUAC)', icon: 'mdi-graph-outline', path: '/blast-radius', requires: ['security:read'] },
+  { title: 'Security Scans', icon: 'mdi-bug-check-outline', path: '/security-scans', requires: ['security:read'] },
   { title: 'Break-Glass (eBPF)', icon: 'mdi-shield-key-outline', path: '/break-glass', requires: ['breakglass:read'] },
 ]
 

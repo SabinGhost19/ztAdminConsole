@@ -19,6 +19,7 @@ const KNOWN_KEYS: { key: string; title: string; description: string }[] = [
   { key: 'policyAttestation', title: 'Custom ZTA policy attestation', description: 'expected_infra_hash + security boundaries.' },
   { key: 'slsaProvenance', title: 'SLSA v1.0 provenance', description: 'buildDefinition + runDetails.builder.id from trusted CI.' },
   { key: 'openvex', title: 'OpenVEX signed attestation', description: 'Signed VEX statements (v0.2.0).' },
+  { key: 'securityScan', title: 'Security scan (gitleaks/checkov/semgrep)', description: 'Signed secrets + IaC + SAST aggregate (security-scan/v1).' },
 ]
 
 const rows = computed(() => {
