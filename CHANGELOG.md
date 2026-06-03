@@ -1,3 +1,10 @@
+# [1.18.0](https://github.com/SabinGhost19/ztAdminConsole/compare/v1.17.1...v1.18.0) (2026-06-03)
+
+
+### Features
+
+* **dashboard,operator:** surface Trivy CVE detail + fix Talon namespace ([3a25fd8](https://github.com/SabinGhost19/ztAdminConsole/commit/3a25fd81e7d110338dbdf18f70820d4e1f609b0e))
+
 ## [1.17.1](https://github.com/SabinGhost19/ztAdminConsole/compare/v1.17.0...v1.17.1) (2026-06-03)
 
 
