@@ -90,6 +90,31 @@ const isLoadingIntegrity = computed(() => dashboardStore.loadingIntegrity)
 const policyOptions = computed(() => dashboardStore.policyOptions)
 const isLoadingPolicies = computed(() => dashboardStore.loadingPolicies)
 
+// Factual cause of an audit-mode (Alert) state, derived from the real signals
+// (not hardcoded): the triggering violation + the actual manifest-hash state.
+// The alert may come from a Trivy vulnerability policy (onVulnerabilityFound:
+// Alert), a CEL Alert rule, or a strict-manifest-hash drift in Alert mode.
+function auditAlertCause(summary: any): string {
+  const s = summary || {}
+  const violations: string[] = Array.isArray(s.violations) ? s.violations.map(String) : []
+  if (s.hasHashMismatch || violations.find((v) => /hash|infra|drift/i.test(v))) {
+    return 'manifest hash drift'
+  }
+  if (violations.find((v) => /vulnerab|trivy/i.test(v))) return 'vulnerability policy (Trivy)'
+  if (violations.length) {
+    return violations[0] + (violations.length > 1 ? ` (+${violations.length - 1} more)` : '')
+  }
+  return 'non-blocking policy alert'
+}
+
+// Exact manifest-hash state for this app (matched / drifted / not enforced).
+function manifestHashState(summary: any): string {
+  const s = summary || {}
+  if (s.hasHashMismatch) return 'drifted (expected ≠ computed)'
+  if (s.expectedInfraHash) return 'matches attested hash'
+  return 'not enforced'
+}
+
 function applicationSeverity(app: any) {
   const summary = app?.summary || {}
   // Audit-mode (enforcementAction: Alert) — the operator created the
@@ -736,10 +761,10 @@ function submitDeclaration() {
 
                   <div
                     v-if="item.raw.app.summary.isAuditAlert"
-                    class="text-caption text-warning mt-1 d-flex align-center ga-1"
+                    class="text-caption text-medium-emphasis mt-1 d-flex align-center ga-1"
                   >
-                    <v-icon size="x-small">mdi-shield-alert-outline</v-icon>
-                    Manifest Hash Drift Detected — Allowed due to Audit Policy
+                    <v-icon size="x-small">mdi-information-outline</v-icon>
+                    Audit-mode alert — cause: {{ auditAlertCause(item.raw.app.summary) }} · manifest hash: {{ manifestHashState(item.raw.app.summary) }}
                   </div>
                   <div
                     v-else-if="item.raw.app.summary.lastError"

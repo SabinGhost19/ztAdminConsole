@@ -89,24 +89,26 @@ function copyPatch() {
 
     <!-- Drift detected -->
     <v-card v-else-if="currentDrift" class="gc-card mb-6" flat>
-      <v-toolbar color="surface" density="compact" elevation="0" class="gc-border-bottom">
-        <v-icon color="warning" class="mr-2 ml-4">mdi-alert-circle-outline</v-icon>
-        <v-toolbar-title class="text-subtitle-2 font-weight-bold d-flex align-center flex-wrap ga-2">
-          <span>Policy Drift Detected</span>
-          <span class="font-mono text-medium-emphasis">{{ currentDrift.namespace }}/{{ currentDrift.name }}</span>
-          <v-select
-            v-if="driftedApps.length > 1"
-            v-model="selectedAppIndex"
-            :items="dashboardStore.driftOptions"
-            variant="outlined" density="compact" hide-details style="width: 220px"
-          ></v-select>
-        </v-toolbar-title>
-        <v-spacer></v-spacer>
-        <v-chip size="small" color="error" variant="flat" class="mr-3 font-weight-medium">{{ currentDrift.state }}</v-chip>
-        <v-btn size="small" variant="outlined" color="primary" class="mr-4" @click="copyPatch">
-          <v-icon start size="small">mdi-content-copy</v-icon> Copy Code
-        </v-btn>
-      </v-toolbar>
+      <div class="d-flex align-center flex-wrap ga-3 px-4 py-3 gc-border-bottom">
+        <v-icon color="warning">mdi-alert-circle-outline</v-icon>
+        <span class="text-subtitle-2 font-weight-bold">Policy Drift Detected</span>
+        <span class="font-mono text-medium-emphasis text-truncate" style="max-width: 280px">
+          {{ currentDrift.namespace }}/{{ currentDrift.name }}
+        </span>
+        <v-select
+          v-if="driftedApps.length > 1"
+          v-model="selectedAppIndex"
+          :items="dashboardStore.driftOptions"
+          variant="outlined" density="compact" hide-details
+          style="max-width: 240px; min-width: 180px"
+        ></v-select>
+        <div class="d-flex align-center ga-2 ms-auto">
+          <v-chip size="small" color="error" variant="flat" class="font-weight-medium">{{ currentDrift.state }}</v-chip>
+          <v-btn size="small" variant="outlined" color="primary" @click="copyPatch">
+            <v-icon start size="small">mdi-content-copy</v-icon> Copy Code
+          </v-btn>
+        </div>
+      </div>
 
       <v-row no-gutters>
         <v-col cols="12" md="6" class="pa-4 gc-border-right">
