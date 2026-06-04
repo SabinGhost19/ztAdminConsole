@@ -1,3 +1,10 @@
+## [1.18.1](https://github.com/SabinGhost19/ztAdminConsole/compare/v1.18.0...v1.18.1) (2026-06-04)
+
+
+### Bug Fixes
+
+* **dashboard:** factual audit-alert cause + fix drift header overlap ([728671f](https://github.com/SabinGhost19/ztAdminConsole/commit/728671fbd1392114b267ad82b127ac49f5f94f85))
+
 # [1.18.0](https://github.com/SabinGhost19/ztAdminConsole/compare/v1.17.1...v1.18.0) (2026-06-03)
 
 
