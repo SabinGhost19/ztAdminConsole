@@ -1,3 +1,10 @@
+## [1.18.3](https://github.com/SabinGhost19/ztAdminConsole/compare/v1.18.2...v1.18.3) (2026-06-09)
+
+
+### Bug Fixes
+
+* **jit:** map anti-abuse reason codes to valid CRD status.state enum ([20416ab](https://github.com/SabinGhost19/ztAdminConsole/commit/20416abde9b23360a1a8136d729c39a118693bb5))
+
 ## [1.18.2](https://github.com/SabinGhost19/ztAdminConsole/compare/v1.18.1...v1.18.2) (2026-06-09)
 
 
