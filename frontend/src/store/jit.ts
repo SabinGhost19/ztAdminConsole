@@ -124,6 +124,15 @@ function normalizeStatus(value: string | undefined): JitSession['status'] {
   if (state === 'PENDING_APPROVAL') return 'PENDING_APPROVAL'
   if (state === 'EXPIRED') return 'EXPIRED'
   if (state === 'REVOKED' || state === 'TAMPERED') return 'REVOKED'
-  if (state.startsWith('DENIED') || state.startsWith('BLOCKED')) return 'DENIED'
+  // Anti-abuse rejections: coarse CRD enum (RATE_LIMITED/QUOTA_EXCEEDED/REJECTED) plus the
+  // legacy granular DENIED_*/BLOCKED_* codes. All collapse to the 'DENIED' UI bucket so the
+  // color/icon/filters already keyed off 'DENIED' keep working.
+  if (
+    state.startsWith('DENIED') ||
+    state.startsWith('BLOCKED') ||
+    state === 'RATE_LIMITED' ||
+    state === 'QUOTA_EXCEEDED' ||
+    state === 'REJECTED'
+  ) return 'DENIED'
   return 'PENDING'
 }
