@@ -1,3 +1,10 @@
+## [1.18.2](https://github.com/SabinGhost19/ztAdminConsole/compare/v1.18.1...v1.18.2) (2026-06-09)
+
+
+### Bug Fixes
+
+* **dashboard:** improve jit access frotnned ([3c3c2fa](https://github.com/SabinGhost19/ztAdminConsole/commit/3c3c2faf42ac52ea8785c89096b00ba5e5a749d8))
+
 ## [1.18.1](https://github.com/SabinGhost19/ztAdminConsole/compare/v1.18.0...v1.18.1) (2026-06-04)
 
 
