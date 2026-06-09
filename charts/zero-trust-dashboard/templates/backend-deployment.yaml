@@ -72,6 +72,12 @@ spec:
             ## Set guac.graphqlUrl to "" in values.yaml to disable Blast Radius.
             - name: GUAC_GRAPHQL_URL
               value: {{ .Values.guac.graphqlUrl | quote }}
+            ## --- JIT downloadable kubeconfig (services/jit_kubeconfig.py) ----
+            ## External API server URL + optional CA embedded into the JIT kubeconfig.
+            - name: JIT_EXTERNAL_APISERVER
+              value: {{ .Values.jit.externalApiServer | quote }}
+            - name: JIT_CLUSTER_CA_DATA
+              value: {{ .Values.jit.clusterCaData | quote }}
             {{- if .Values.breakglass.enabled }}
             - name: BREAKGLASS_JWT_PRIVATE_KEY_PATH
               value: /etc/breakglass/private.pem

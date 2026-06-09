@@ -3,7 +3,7 @@ import json
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import StreamingResponse
+from fastapi.responses import Response, StreamingResponse
 from typing import Any, AsyncIterator, Dict, List
 
 from pydantic import BaseModel, Field
@@ -13,6 +13,7 @@ logger = logging.getLogger("zero_trust_jit_routes")
 from app.services import jit_service
 from app.services.jit_admin_service import get_jit_analytics, get_jit_policies, update_jit_policies
 from app.services import k8s_jit_service
+from app.services.jit_kubeconfig import build_jit_kubeconfig
 from app.middleware.errors import ZeroTrustException
 from app.security.identity import current_user, require_permission, require_any_permission, Identity
 from app.security import permissions as perm
@@ -146,6 +147,46 @@ async def get_jit_request_single(
         return {"status": "success", "request": res}
     except Exception as e:
         raise HTTPException(status_code=404, detail=f"JIT request not found: {e}")
+
+
+@router.get("/request/{namespace}/{name}/kubeconfig")
+async def download_jit_kubeconfig(
+    namespace: str,
+    name: str,
+    identity: Identity = Depends(
+        require_any_permission(perm.P_JIT_READ, perm.P_JIT_READ_LIMITED, perm.P_JIT_READ_OWN)
+    ),
+):
+    """Return a self-contained kubeconfig (server + CA + token, NO client cert) for an
+    ACTIVE JIT session, so the developer authenticates as the temporary ServiceAccount
+    instead of accidentally falling back to their admin client certificate."""
+    try:
+        item = await k8s_jit_service.get_jit_request(namespace=namespace, name=name)
+    except Exception as e:
+        raise HTTPException(status_code=404, detail=f"JIT request not found: {e}")
+
+    summary = item.get("summary", {}) or {}
+
+    # Non-admins (without P_JIT_READ) may only download their own session.
+    if perm.P_JIT_READ not in identity.permissions:
+        owner = str(summary.get("developerId") or "").strip().lower()
+        if not owner or owner != (identity.email or "").strip().lower():
+            raise HTTPException(status_code=403, detail="Not your JIT session")
+
+    if not summary.get("tokenIssued") or str(summary.get("state") or "").upper() != "ACTIVE":
+        raise HTTPException(status_code=409, detail="JIT token not ready for this session")
+
+    try:
+        body = build_jit_kubeconfig(summary)
+    except ValueError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+
+    return Response(
+        content=body,
+        media_type="application/yaml",
+        headers={"Content-Disposition": f'attachment; filename="jit-{name}.yaml"'},
+    )
+
 
 @router.delete("/revoke/{namespace}/{name}")
 async def revoke_jit_session(

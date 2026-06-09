@@ -518,7 +518,10 @@ function getTTLColorClass(expiresAtStr: string) {
 }
 
 function copyTokenCommand(session: JitSession) {
-  const cmd = session.commandToUse || `kubectl --token='${session.temporaryToken}' -n ${session.namespace} get pods`
+  // Fallback only — the command must stay isolated from the local (admin) kubeconfig,
+  // otherwise the client cert wins and the token is ignored.
+  const cmd = session.commandToUse
+    || `kubectl --kubeconfig=/dev/null --server=<API_SERVER_URL> --insecure-skip-tls-verify=true --token='${session.temporaryToken}' -n ${session.namespace} get pods`
   navigator.clipboard.writeText(cmd)
   generatedCommand.value = cmd
   notifyStore.addAlert({
@@ -532,17 +535,42 @@ function copyTokenCommand(session: JitSession) {
   })
 }
 
-function copyKubeconfig(sessionId: string) {
-  navigator.clipboard.writeText(`export KUBECONFIG=~/.kube/cache/${sessionId}.yaml\nkubectl config view`)
-  notifyStore.addAlert({
-    error_code: 'CLIPBOARD_SUCCESS',
-    message: 'Kubeconfig command copied.',
-    technical_details: `Stored command for session ${sessionId}`,
-    component: 'JIT_MODULE',
-    trace_id: `SYS-${Math.random().toString(36).substring(2)}`,
-    action_required: '',
-    type: 'warning'
-  })
+async function downloadKubeconfig(session: JitSession) {
+  try {
+    const res = await api.get(
+      `/jit/request/${session.namespace}/${session.id}/kubeconfig`,
+      { responseType: 'blob' }
+    )
+    const blob = new Blob([res.data], { type: 'application/yaml' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `jit-${session.id}.yaml`
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    URL.revokeObjectURL(url)
+    notifyStore.addAlert({
+      error_code: 'KUBECONFIG_DOWNLOADED',
+      message: 'Kubeconfig JIT descărcat.',
+      technical_details: `export KUBECONFIG=$(pwd)/jit-${session.id}.yaml && kubectl auth whoami  # trebuie: system:serviceaccount:${session.namespace}:…  (NU system:admin)`,
+      component: 'JIT_MODULE',
+      trace_id: `SYS-${Math.random().toString(36).substring(2)}`,
+      action_required: '',
+      type: 'warning'
+    })
+  } catch (err: any) {
+    const detail = err?.response?.data?.detail || err?.message || 'Download failed'
+    notifyStore.addAlert({
+      error_code: 'KUBECONFIG_ERROR',
+      message: 'Nu am putut genera kubeconfig-ul JIT.',
+      technical_details: String(detail),
+      component: 'JIT_MODULE',
+      trace_id: `SYS-${Math.random().toString(36).substring(2)}`,
+      action_required: 'Sesiunea trebuie să fie ACTIVE și backend-ul să aibă JIT_EXTERNAL_APISERVER setat.',
+      type: 'error'
+    })
+  }
 }
 
 async function loadJitAdmin() {
@@ -890,16 +918,28 @@ async function savePolicies() {
                       {{ selectedSession.id }}
                     </v-chip>
                   </div>
-                  <v-btn
-                    v-if="tokenPanel.kind === 'ready'"
-                    size="x-small"
-                    variant="text"
-                    :color="copySuccess ? 'success' : 'primary'"
-                    :prepend-icon="copySuccess ? 'mdi-check' : 'mdi-content-copy'"
-                    @click="copyCommand"
-                  >
-                    {{ copySuccess ? 'Copied' : 'Copy' }}
-                  </v-btn>
+                  <div class="d-flex align-center ga-1">
+                    <v-btn
+                      v-if="tokenPanel.kind === 'ready' && selectedSession"
+                      size="x-small"
+                      variant="tonal"
+                      color="success"
+                      prepend-icon="mdi-download"
+                      @click="downloadKubeconfig(selectedSession)"
+                    >
+                      Download kubeconfig
+                    </v-btn>
+                    <v-btn
+                      v-if="tokenPanel.kind === 'ready'"
+                      size="x-small"
+                      variant="text"
+                      :color="copySuccess ? 'success' : 'primary'"
+                      :prepend-icon="copySuccess ? 'mdi-check' : 'mdi-content-copy'"
+                      @click="copyCommand"
+                    >
+                      {{ copySuccess ? 'Copied' : 'Copy' }}
+                    </v-btn>
+                  </div>
                 </div>
                 <pre
                   class="token-panel__body font-mono text-caption ma-0 pa-3 rounded"
@@ -909,6 +949,16 @@ async function savePolicies() {
                   }"
                   style="white-space: pre-wrap; word-break: break-all;"
                 >{{ tokenPanel.body }}</pre>
+                <div v-if="tokenPanel.kind === 'ready'" class="d-flex align-start ga-2 mt-2 px-1">
+                  <v-icon size="x-small" color="info" class="mt-1">mdi-shield-key-outline</v-icon>
+                  <span class="text-caption text-secondary">
+                    Folosește kubeconfig-ul descărcat și verifică cu
+                    <code>kubectl auth whoami</code> — trebuie să arate
+                    <code>system:serviceaccount:…</code>, NU <code>system:admin</code>.
+                    Nu rula <code>--token</code> peste un kubeconfig cu certificat client
+                    (certificatul câștigă, tokenul e ignorat).
+                  </span>
+                </div>
               </div>
             </v-expand-transition>
 
@@ -1029,10 +1079,10 @@ async function savePolicies() {
                         </v-list-item>
                         <v-list-item
                           v-if="isTokenUsable(session)"
-                          @click="copyKubeconfig(session.sessionId || session.id)"
-                          prepend-icon="mdi-code-json"
+                          @click="downloadKubeconfig(session)"
+                          prepend-icon="mdi-download"
                         >
-                          <v-list-item-title class="text-caption">Copy Kubeconfig</v-list-item-title>
+                          <v-list-item-title class="text-caption text-success font-weight-medium">Download kubeconfig</v-list-item-title>
                         </v-list-item>
                         <v-list-item v-else prepend-icon="mdi-key-off-outline" disabled>
                           <v-list-item-title class="text-caption text-secondary font-italic">Token unavailable for {{ session.status }} sessions</v-list-item-title>

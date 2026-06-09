@@ -76,6 +76,17 @@ auth:
 guac:
   graphqlUrl: http://graphql-server.guac.svc.cluster.local:8080/query
 
+## JIT access: data the backend embeds into the downloadable kubeconfig for a JIT session.
+## externalApiServer MUST be the externally reachable kube-apiserver URL (NOT the in-cluster
+## kubernetes.default.svc, which a developer's laptop can't reach). clusterCaData is optional:
+## leave empty to fall back to the backend pod's in-cluster CA
+## (/var/run/secrets/kubernetes.io/serviceaccount/ca.crt). Set it to the base64
+## certificate-authority-data from your admin kubeconfig if the in-cluster CA doesn't validate
+## the external endpoint; otherwise the kubeconfig uses insecure-skip-tls-verify.
+jit:
+  externalApiServer: "https://178.105.152.139:6443"
+  clusterCaData: ""
+
 ## Break-Glass / eBPF honeypot integration. The Secret is created by the
 ## ebpf-honeypot pre-install Job (jwt-keygen), see ebpf-honeypot/values.yaml
 ## (jwt.backendSecretName / jwt.backendNamespace).

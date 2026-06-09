@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import re
 
 from typing import Any
@@ -69,8 +70,13 @@ def serialize_jit_request(item: dict[str, Any]) -> dict[str, Any]:
     token = status.get("temporaryToken")
     target_ns = spec.get("targetNamespace", "")
     sa = status.get("temporaryServiceAccount")
+    # Isolate from the caller's kubeconfig: a plain `kubectl --token=...` over an admin
+    # kubeconfig is ignored (client cert wins), so the command must drop the local creds.
+    # The downloadable kubeconfig is the primary path; this is a quick one-liner fallback.
+    _apiserver = os.getenv("JIT_EXTERNAL_APISERVER", "").strip() or "<API_SERVER_URL>"
     command_to_use = (
-        f"kubectl --token='{token}' -n {target_ns} get pods"
+        f"kubectl --kubeconfig=/dev/null --server={_apiserver} "
+        f"--insecure-skip-tls-verify=true --token='{token}' -n {target_ns} get pods"
         if token and target_ns
         else None
     )
