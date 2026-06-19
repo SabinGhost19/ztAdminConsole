@@ -1,3 +1,10 @@
+# [1.19.0](https://github.com/SabinGhost19/ztAdminConsole/compare/v1.18.3...v1.19.0) (2026-06-19)
+
+
+### Features
+
+* new guac filters ([e96bb63](https://github.com/SabinGhost19/ztAdminConsole/commit/e96bb63025cb37e624065863051ab2dc759c8f3a))
+
 ## [1.18.3](https://github.com/SabinGhost19/ztAdminConsole/compare/v1.18.2...v1.18.3) (2026-06-09)
 
 
