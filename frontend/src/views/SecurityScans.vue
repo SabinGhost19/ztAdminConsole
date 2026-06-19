@@ -32,12 +32,48 @@ const findingHeaders = [
   { title: 'Rule', key: 'ruleId' },
   { title: 'Location', key: 'location' },
   { title: 'Title', key: 'title' },
+  { title: 'Reference', key: 'ref', sortable: false, align: 'center' as const },
 ]
+
+// Build an official-platform link for a finding so the auditor can read more
+// about it on a real, authoritative source. Prefer a CVE / GHSA / CWE id found
+// in the rule, title or category (-> NVD / GitHub Advisories / MITRE CWE);
+// otherwise fall back to the scanner's own official rule registry.
+function findingRef(f: Record<string, any>): { url: string; label: string } | null {
+  const hay = `${f.ruleId || ''} ${f.title || ''} ${f.category || ''} ${f.remediation || ''}`
+  const cve = hay.match(/CVE-\d{4}-\d{4,}/i)
+  if (cve) {
+    const id = cve[0].toUpperCase()
+    return { url: `https://nvd.nist.gov/vuln/detail/${id}`, label: `NVD · ${id}` }
+  }
+  const ghsa = hay.match(/GHSA-[0-9a-z]{4}-[0-9a-z]{4}-[0-9a-z]{4}/i)
+  if (ghsa) {
+    const id = ghsa[0].toUpperCase()
+    return { url: `https://github.com/advisories/${id}`, label: `GitHub Advisory · ${id}` }
+  }
+  const cwe = hay.match(/CWE-(\d+)/i)
+  if (cwe) {
+    return { url: `https://cwe.mitre.org/data/definitions/${cwe[1]}.html`, label: `MITRE CWE-${cwe[1]}` }
+  }
+  const tool = String(f.tool || '').toLowerCase()
+  const rule = String(f.ruleId || '').trim()
+  if (tool === 'semgrep' && rule) {
+    return { url: `https://semgrep.dev/r/${encodeURIComponent(rule)}`, label: 'Semgrep registry' }
+  }
+  if (tool === 'checkov') {
+    return { url: 'https://www.checkov.io/5.Policy%20Index/all.html', label: 'Checkov policy index' }
+  }
+  if (tool === 'gitleaks') {
+    return { url: 'https://github.com/gitleaks/gitleaks#configuration', label: 'gitleaks rules' }
+  }
+  return null
+}
 
 const findingRows = computed<Record<string, any>[]>(() =>
   (selectedItem.value?.findings || []).map((f: Record<string, any>) => ({
     ...f,
     location: `${f.file || ''}${f.line ? ':' + f.line : ''}`,
+    ref: findingRef(f),
   })),
 )
 
@@ -196,6 +232,24 @@ onMounted(() => {
         </template>
         <template #item.title="{ item }">
           <span class="text-caption">{{ item.title }}</span>
+        </template>
+        <template #item.ref="{ item }">
+          <v-tooltip v-if="item.ref" :text="item.ref.label" location="top">
+            <template #activator="{ props }">
+              <v-btn
+                v-bind="props"
+                :href="item.ref.url"
+                target="_blank"
+                rel="noopener noreferrer"
+                icon="mdi-open-in-new"
+                size="x-small"
+                variant="text"
+                density="comfortable"
+                :aria-label="`Open ${item.ref.label} in a new tab`"
+              />
+            </template>
+          </v-tooltip>
+          <span v-else class="text-disabled">—</span>
         </template>
         <template #no-data>
           <div class="pa-4 text-medium-emphasis">No findings recorded for this application.</div>

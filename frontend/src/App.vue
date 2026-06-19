@@ -145,7 +145,7 @@ function formatTimestamp(value?: string) {
       <div class="d-flex align-center mr-4">
         <v-tooltip text="JIT requests active in cluster" location="bottom">
           <template v-slot:activator="{ props }">
-            <v-chip v-bind="props" size="small" variant="flat" color="blue-darken-1" class="mr-2 px-3 font-weight-medium">
+            <v-chip v-bind="props" size="small" variant="tonal" class="mr-2 px-3 font-weight-medium">
               <v-icon start size="small">mdi-shield-account</v-icon>
               {{ summary.jitRequests }} JIT Requests
             </v-chip>
@@ -154,8 +154,8 @@ function formatTimestamp(value?: string) {
 
         <v-tooltip text="Applications with degraded posture" location="bottom">
           <template v-slot:activator="{ props }">
-            <v-chip v-bind="props" size="small" variant="flat" color="orange-darken-1" class="mr-2 px-3 font-weight-medium text-black">
-              <v-icon start size="small" class="text-black">mdi-alert-decagram</v-icon>
+            <v-chip v-bind="props" size="small" variant="tonal" class="mr-2 px-3 font-weight-medium">
+              <v-icon start size="small">mdi-alert-decagram</v-icon>
               {{ summary.degradedApplications }} Degraded Apps
             </v-chip>
           </template>
@@ -163,7 +163,7 @@ function formatTimestamp(value?: string) {
 
         <v-tooltip text="Verified supply-chain workloads" location="bottom">
           <template v-slot:activator="{ props }">
-            <v-chip v-bind="props" size="small" variant="flat" color="green-darken-1" class="px-3 font-weight-medium">
+            <v-chip v-bind="props" size="small" variant="tonal" class="px-3 font-weight-medium">
               <v-icon start size="small">mdi-security-network</v-icon>
               {{ summary.verifiedApplications }} Verified
             </v-chip>

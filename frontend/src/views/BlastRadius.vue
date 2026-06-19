@@ -26,8 +26,6 @@ const state = reactive({
 // the topology toolbar surface the M/N breakdown directly.
 const onlyInCluster = ref(true)
 
-const guacHealth = ref<{ reachable: boolean; endpoint?: string; reason?: string } | null>(null)
-
 // Known vulnerabilities loaded once for the picker. Each item carries the
 // raw ID, the family (GHSA / CVE / Debian / ...) and how many distinct
 // packages it touches — that count is the most useful sort key.
@@ -51,14 +49,62 @@ const vulnPickerItems = computed(() =>
   })),
 )
 
-async function probeGuac() {
-  try {
-    const { data } = await api.get('/guac/health')
-    guacHealth.value = data
-  } catch {
-    guacHealth.value = { reachable: false, reason: 'health endpoint unreachable' }
-  }
+// Tag filter for the picker. GUAC namespaces collapse into four buckets the
+// auditor cares about: CVE (NVD), GHSA (GitHub), DEBIAN (OS base layer) and
+// `other` (OSV / RHSA / ALAS / …). Empty selection = no filter (show all).
+const TAG_BUCKETS = ['CVE', 'GHSA', 'DEBIAN', 'other'] as const
+type TagBucket = (typeof TAG_BUCKETS)[number]
+
+function familyBucket(family: string): TagBucket {
+  const f = (family || '').toLowerCase()
+  if (f === 'ghsa') return 'GHSA'
+  if (f === 'debian') return 'DEBIAN'
+  if (f === 'cve') return 'CVE'
+  return 'other'
 }
+
+const tagColor: Record<TagBucket, string> = {
+  CVE: 'red',
+  GHSA: 'purple',
+  DEBIAN: 'amber',
+  other: 'grey',
+}
+
+const activeTags = ref<TagBucket[]>([])
+
+const filteredVulnPickerItems = computed(() => {
+  if (activeTags.value.length === 0) return vulnPickerItems.value
+  const active = new Set(activeTags.value)
+  return vulnPickerItems.value.filter(it => active.has(familyBucket(it.family)))
+})
+
+// Bottom legend — what each namespace tag means and why it is shown.
+const tagLegend: { tag: TagBucket; title: string; blurb: string }[] = [
+  {
+    tag: 'CVE',
+    title: 'NVD / MITRE',
+    blurb:
+      'Common Vulnerabilities and Exposures (CVE-…). The canonical, cross-ecosystem identifier surfaced by OSV — the common denominator every other source maps back to.',
+  },
+  {
+    tag: 'GHSA',
+    title: 'GitHub Security Advisory',
+    blurb:
+      'GitHub-curated advisory (GHSA-…). Usually the richest, earliest source for language packages (pip / npm / go); often maps to one or more CVEs.',
+  },
+  {
+    tag: 'DEBIAN',
+    title: 'Debian Security Advisory',
+    blurb:
+      'OS-level finding (debian-cve-…) from the image base layer (python:3.11-slim → Debian). Shared by every app on the same base, so it is what links images together in the graph.',
+  },
+  {
+    tag: 'other',
+    title: 'OSV / RHSA / ALAS / …',
+    blurb:
+      'Distro or aggregator namespaces that are not CVE / GHSA / DEBIAN (OSV, Red Hat, Amazon Linux, …). Grouped together to keep the filter focused.',
+  },
+]
 
 async function loadKnownVulnerabilities() {
   knownVulnsLoading.value = true
@@ -110,7 +156,6 @@ async function runQuery() {
   }
 }
 
-probeGuac()
 loadKnownVulnerabilities()
 </script>
 
@@ -125,22 +170,30 @@ loadKnownVulnerabilities()
         </p>
       </v-col>
       <v-spacer />
-      <v-col cols="auto" v-if="guacHealth">
-        <v-chip
-          :color="guacHealth.reachable ? 'success' : 'error'"
-          :prepend-icon="guacHealth.reachable ? 'mdi-graph-outline' : 'mdi-graph-off-outline'"
-          variant="tonal"
-        >
-          GUAC {{ guacHealth.reachable ? 'online' : 'offline' }}
-        </v-chip>
-      </v-col>
     </v-row>
 
     <v-card variant="flat" class="gc-border mb-4" style="border: 1px solid rgba(var(--v-theme-on-surface), 0.12)">
+      <!-- Tag filter: narrow the picker to a namespace bucket before searching. -->
+      <v-card-text class="pb-0 d-flex align-center flex-wrap ga-2">
+        <span class="text-caption text-medium-emphasis me-1">Filtrează după tag:</span>
+        <v-chip-group v-model="activeTags" multiple>
+          <v-chip
+            v-for="t in TAG_BUCKETS"
+            :key="t"
+            :value="t"
+            :color="tagColor[t]"
+            size="small"
+            variant="tonal"
+            filter
+          >
+            {{ t }}
+          </v-chip>
+        </v-chip-group>
+      </v-card-text>
       <v-card-text class="d-flex align-center ga-3">
         <v-combobox
           v-model="state.cve"
-          :items="vulnPickerItems"
+          :items="filteredVulnPickerItems"
           :loading="knownVulnsLoading"
           label="Vulnerability Identifier"
           placeholder="Selectează din graf sau scrie CVE-…, GHSA-…, debian-cve-…"
@@ -186,7 +239,7 @@ loadKnownVulnerabilities()
         <v-btn
           color="primary"
           :loading="state.loading"
-          :disabled="!guacHealth?.reachable"
+          :disabled="!state.cve"
           @click="runQuery"
           prepend-icon="mdi-radar"
         >
@@ -211,6 +264,32 @@ loadKnownVulnerabilities()
       :response="state.data"
       v-model:only-in-cluster="onlyInCluster"
     />
+
+    <!-- Legend: what each vulnerability namespace tag means and why it shows.
+         Kept at the bottom of the view — minimalist, info-icon per tag. -->
+    <v-card variant="flat" class="mt-4" style="border: 1px solid rgba(var(--v-theme-on-surface), 0.12)">
+      <v-card-text class="py-3 d-flex align-center flex-wrap ga-5">
+        <span class="text-caption text-medium-emphasis text-uppercase" style="letter-spacing: 0.06em">
+          Taguri de vulnerabilitate
+        </span>
+        <div v-for="l in tagLegend" :key="l.tag" class="d-flex align-center ga-2">
+          <v-chip :color="tagColor[l.tag]" size="small" variant="tonal" label>{{ l.tag }}</v-chip>
+          <span class="text-body-2">{{ l.title }}</span>
+          <v-tooltip location="top" max-width="320">
+            <template #activator="{ props: tip }">
+              <v-icon
+                v-bind="tip"
+                size="small"
+                icon="mdi-information-outline"
+                class="text-medium-emphasis"
+                style="cursor: help"
+              />
+            </template>
+            <span>{{ l.blurb }}</span>
+          </v-tooltip>
+        </div>
+      </v-card-text>
+    </v-card>
   </v-container>
 </template>
 
