@@ -34,6 +34,35 @@ function toggleZtsExpand(uid: string) {
   expandedZtsUid.value = expandedZtsUid.value === uid ? null : uid
 }
 
+// Maps the operator-computed ZTS phase to a neutral status chip. The phase now
+// reflects real cluster state (ExternalSecret synced + Secret present + trust),
+// not a blind "Running".
+function phaseColor(phase?: string): string {
+  switch (phase) {
+    case 'Running': return 'success'
+    case 'Provisioning':
+    case 'Validating': return 'info'
+    case 'Degraded': return 'warning'
+    case 'BlockedBySecurity': return 'error'
+    default: return 'secondary'
+  }
+}
+function phaseIcon(phase?: string): string {
+  switch (phase) {
+    case 'Running': return 'mdi-check-circle-outline'
+    case 'Provisioning':
+    case 'Validating': return 'mdi-progress-clock'
+    case 'Degraded': return 'mdi-alert-outline'
+    case 'BlockedBySecurity': return 'mdi-shield-lock-outline'
+    default: return 'mdi-help-circle-outline'
+  }
+}
+function conditionColor(status?: string): string {
+  if (status === 'True') return 'success'
+  if (status === 'False') return 'error'
+  return 'secondary'
+}
+
 onMounted(() => {
   Promise.all([
     dashboardStore.fetchSecrets(true),
@@ -174,15 +203,16 @@ async function revokeZts(namespace: string, name: string) {
                   <th class="text-left font-weight-medium">ZTS Declaration</th>
                   <th class="text-left font-weight-medium">Namespace</th>
                   <th class="text-left font-weight-medium">Source / Path</th>
+                  <th class="text-left font-weight-medium">Status</th>
                   <th class="text-right font-weight-medium">Actions</th>
                 </tr>
               </thead>
               <tbody v-if="isLoading">
-                 <tr v-for="i in 3" :key="i"><td colspan="4"><v-skeleton-loader type="table-row" height="40"></v-skeleton-loader></td></tr>
+                 <tr v-for="i in 3" :key="i"><td colspan="5"><v-skeleton-loader type="table-row" height="40"></v-skeleton-loader></td></tr>
               </tbody>
               <tbody v-else>
                 <tr v-if="secrets.length === 0">
-                  <td colspan="4" class="text-center pa-4 text-caption text-secondary">Nicio regulă Zero Trust Secret declarată</td>
+                  <td colspan="5" class="text-center pa-4 text-caption text-secondary">Nicio regulă Zero Trust Secret declarată</td>
                 </tr>
                 <template v-for="zts in secrets" :key="zts.metadata.uid">
                   <tr
@@ -198,12 +228,23 @@ async function revokeZts(namespace: string, name: string) {
                     </td>
                     <td class="font-mono text-caption text-secondary">{{ zts.metadata.namespace }}</td>
                     <td class="font-mono text-caption text-secondary">{{ zts.spec.secretData?.remotePath }} → {{ zts.summary.targetSecretName }}</td>
+                    <td>
+                      <v-chip
+                        :color="phaseColor(zts.summary?.phase)"
+                        size="small"
+                        variant="tonal"
+                        :prepend-icon="phaseIcon(zts.summary?.phase)"
+                        class="font-weight-medium"
+                      >
+                        {{ zts.summary?.phase || 'Pending' }}
+                      </v-chip>
+                    </td>
                     <td class="text-right">
                       <v-btn v-if="canWriteSecrets" @click.stop="revokeZts(zts.metadata.namespace, zts.metadata.name)" color="error" size="small" variant="text" icon="mdi-delete" title="Sterge delegarea ZTS"></v-btn>
                     </td>
                   </tr>
                   <tr v-if="expandedZtsUid === zts.metadata.uid" class="zts-describe-row">
-                    <td colspan="4" class="pa-0">
+                    <td colspan="5" class="pa-0">
                       <div class="zts-describe-panel">
 
                         <!-- Header -->
@@ -211,6 +252,29 @@ async function revokeZts(namespace: string, name: string) {
                           <v-icon size="16" color="secondary" class="mr-2">mdi-file-search-outline</v-icon>
                           <span class="text-body-2 font-weight-medium">{{ zts.metadata.name }}</span>
                           <span class="text-caption text-secondary ml-2">· ZeroTrustSecret</span>
+                        </div>
+
+                        <!-- Status (real cluster state: trust + ESO sync + Secret presence) -->
+                        <div class="describe-section">
+                          <div class="describe-section-title">Status</div>
+                          <div class="d-flex align-center flex-wrap mb-1" style="gap: 8px;">
+                            <v-chip :color="phaseColor(zts.summary?.phase)" size="small" variant="tonal" :prepend-icon="phaseIcon(zts.summary?.phase)" class="font-weight-medium">
+                              {{ zts.summary?.phase || 'Pending' }}
+                            </v-chip>
+                            <span v-if="zts.summary?.lastError" class="text-caption" style="color: rgb(var(--v-theme-warning)); word-break: break-word;">
+                              {{ zts.summary.lastError }}
+                            </span>
+                          </div>
+                          <div v-if="zts.summary?.conditions?.length" class="mt-2">
+                            <div v-for="(c, i) in zts.summary.conditions" :key="i" class="zts-condition-row">
+                              <v-icon size="13" :color="conditionColor(c.status)" class="mr-1">
+                                {{ c.status === 'True' ? 'mdi-check-circle' : 'mdi-close-circle' }}
+                              </v-icon>
+                              <span class="zc-type">{{ c.type }}</span>
+                              <span class="zc-reason">{{ c.reason }}</span>
+                              <span v-if="c.message" class="zc-message text-secondary">{{ c.message }}</span>
+                            </div>
+                          </div>
                         </div>
 
                         <!-- Identity -->
@@ -421,6 +485,31 @@ async function revokeZts(namespace: string, name: string) {
   font-family: 'Roboto Mono', monospace;
   font-size: 0.78rem;
   margin-bottom: 4px;
+}
+
+.zts-condition-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 0;
+  font-family: 'Roboto Mono', monospace;
+  font-size: 0.74rem;
+}
+.zc-type {
+  font-weight: 600;
+  color: rgba(var(--v-theme-on-surface), 0.85);
+  min-width: 64px;
+}
+.zc-reason {
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: rgba(var(--v-theme-on-surface), 0.07);
+  color: rgba(var(--v-theme-on-surface), 0.6);
+  font-size: 0.68rem;
+}
+.zc-message {
+  font-size: 0.7rem;
+  word-break: break-word;
 }
 
 .dm-remote { color: rgba(var(--v-theme-on-surface), 0.75); }

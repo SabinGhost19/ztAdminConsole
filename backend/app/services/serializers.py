@@ -242,6 +242,8 @@ def serialize_zts_resource(item: dict[str, Any]) -> dict[str, Any]:
             "targetWorkload": target_workload,
             "targetSecretName": status.get("targetSecretName") or spec.get("targetSecretName"),
             "phase": status.get("phase", "Pending"),
+            "lastError": status.get("lastError") or "",
+            "conditions": status.get("conditions", []) or [],
             "lastRotationChecksum": status.get("lastRotationChecksum"),
             "refreshInterval": lifecycle.get("refreshInterval", "10m"),
             "onUpdateAction": lifecycle.get("onUpdateAction", "RollingRestart"),

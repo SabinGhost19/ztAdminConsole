@@ -149,6 +149,46 @@ class K8sScannerService:
             logger.exception("Failed creating custom resource", extra={"details": {**target, "kind": body.get("kind")}})
             raise
 
+    async def replace_custom_resource(
+        self,
+        *,
+        plural: str,
+        name: str,
+        body: dict,
+        namespace: str | None = None,
+        cluster_scoped: bool = False,
+    ) -> dict:
+        started = time.perf_counter()
+        target = _operation_target(plural, namespace, cluster_scoped, name)
+        logger.info("Replacing custom resource", extra={"details": {**target, "kind": body.get("kind")}})
+        api = get_custom_api()
+        try:
+            if cluster_scoped or not namespace:
+                payload = await api.replace_cluster_custom_object(
+                    group=GROUP,
+                    version=VERSION,
+                    plural=plural,
+                    name=name,
+                    body=body,
+                )
+            else:
+                payload = await api.replace_namespaced_custom_object(
+                    group=GROUP,
+                    version=VERSION,
+                    namespace=namespace,
+                    plural=plural,
+                    name=name,
+                    body=body,
+                )
+            logger.info(
+                "Replaced custom resource successfully",
+                extra={"details": {**target, "durationMs": round((time.perf_counter() - started) * 1000, 2)}},
+            )
+            return payload
+        except Exception:
+            logger.exception("Failed replacing custom resource", extra={"details": {**target, "kind": body.get("kind")}})
+            raise
+
     async def delete_custom_resource(
         self,
         *,

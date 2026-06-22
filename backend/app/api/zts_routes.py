@@ -63,6 +63,31 @@ async def create_zts_secret(
     )
     return res
 
+@router.put("/{namespace}/{name}", response_model=Dict[str, Any])
+async def update_zts_secret(
+    namespace: str,
+    name: str,
+    data: ZtsCreateIn,
+    request: Request,
+    identity: Identity = Depends(require_permission(perm.P_SECRETS_WRITE)),
+):
+    email = identity.email
+
+    res = await zts_service.update_zts_secret(
+        namespace=namespace,
+        name=name,
+        user_email=email,
+        application_ref=data.applicationRef.model_dump(exclude_none=True),
+        target_workload=data.targetWorkload.model_dump(exclude_none=True),
+        secret_store_ref=data.secretStoreRef.model_dump(exclude_none=True),
+        target_secret_name=data.targetSecretName,
+        secret_data=data.secretData,
+        zero_trust_conditions=data.zeroTrustConditions,
+        lifecycle=data.lifecycle,
+    )
+    return res
+
+
 @router.delete("/{namespace}/{name}")
 async def delete_zts_secret(
     namespace: str,
