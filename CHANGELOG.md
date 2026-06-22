@@ -1,3 +1,10 @@
+# [1.20.0](https://github.com/SabinGhost19/ztAdminConsole/compare/v1.19.0...v1.20.0) (2026-06-22)
+
+
+### Features
+
+* **zts:** real sync-verified status, hard trust-revocation, multi-container ([a8f0734](https://github.com/SabinGhost19/ztAdminConsole/commit/a8f0734b17bc00b5d1746c15857f1544d9ba7f7b))
+
 # [1.19.0](https://github.com/SabinGhost19/ztAdminConsole/compare/v1.18.3...v1.19.0) (2026-06-19)
 
 
