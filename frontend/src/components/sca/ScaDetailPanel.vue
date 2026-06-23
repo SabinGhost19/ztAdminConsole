@@ -74,18 +74,22 @@ function createdAt(): string {
       <span class="text-caption text-secondary ml-2">· SupplyChainAttestation</span>
     </div>
 
-    <DescribeSection title="Identity">
-      <DescribeField label="name" :value="meta.name" />
-      <DescribeField label="scope" value="Cluster" />
-      <DescribeField label="uid" :value="meta.uid" tone="muted" />
-      <DescribeField label="created" :value="createdAt()" />
+    <DescribeSection title="Identity" hint="Who this policy is and how workloads reference it.">
+      <DescribeField label="name" :value="meta.name"
+        hint="Policy name. ZeroTrustApplication.securityPolicyRef.name binds a workload to this policy." />
+      <DescribeField label="scope" value="Cluster"
+        hint="SCA is cluster-scoped — a single policy can govern workloads across all namespaces." />
+      <DescribeField label="uid" :value="meta.uid" tone="muted" hint="Kubernetes object UID of this policy." />
+      <DescribeField label="created" :value="createdAt()" hint="When this policy was created in the cluster." />
     </DescribeSection>
 
-    <DescribeSection title="Bound workloads">
-      <DescribeField label="bound" :value="coverage.total" />
-      <DescribeField label="verified" :value="coverage.verified" :tone="coverage.verified ? 'ok' : 'default'" />
-      <DescribeField label="compliant" :value="coverage.compliant" />
-      <DescribeField label="alert" :value="coverage.alert" :tone="coverage.alert ? 'warn' : 'muted'" />
+    <DescribeSection title="Bound workloads" hint="ZeroTrustApplications that currently reference this policy.">
+      <DescribeField label="bound" :value="coverage.total" hint="Number of workloads bound to this policy." />
+      <DescribeField label="verified" :value="coverage.verified" :tone="coverage.verified ? 'ok' : 'default'"
+        hint="Bound workloads whose trustLevel is Verified." />
+      <DescribeField label="compliant" :value="coverage.compliant" hint="Bound workloads whose securityState is Compliant." />
+      <DescribeField label="alert" :value="coverage.alert" :tone="coverage.alert ? 'warn' : 'muted'"
+        hint="Bound workloads currently in Alert state." />
       <div v-if="boundApps.length" class="bound-list" style="grid-column: 1 / -1;">
         <div v-for="a in boundApps" :key="a.metadata?.uid || a.metadata?.name" class="bound-row">
           {{ a.metadata?.namespace }}/{{ a.metadata?.name }}
@@ -94,67 +98,98 @@ function createdAt(): string {
       </div>
     </DescribeSection>
 
-    <DescribeSection title="Source Validation">
-      <DescribeField label="enforceCosign" :value="yn(summary.enforceCosign)" :tone="boolTone(summary.enforceCosign)" />
-      <DescribeField label="trustedIssuers" :value="(summary.trustedIssuers || []).join(', ')" />
+    <DescribeSection title="Source Validation" hint="Container image signature verification (Cosign / keyless).">
+      <DescribeField label="enforceCosign" :value="yn(summary.enforceCosign)" :tone="boolTone(summary.enforceCosign)"
+        hint="Require a valid Cosign signature on the image before admission." />
+      <DescribeField label="trustedIssuers" :items="summary.trustedIssuers || []"
+        hint="OIDC / CI identities allowed to sign images (keyless Cosign), e.g. GitHub Actions OIDC." />
     </DescribeSection>
 
-    <DescribeSection title="Provenance">
-      <DescribeField label="requireVoucher" :value="yn(summary.requireVoucher)" :tone="boolTone(summary.requireVoucher)" />
-      <DescribeField label="enforceHmacChain" :value="yn(summary.enforceHmacChain)" :tone="boolTone(summary.enforceHmacChain)" />
-      <DescribeField label="minSlsaLevel" :value="summary.minSlsaLevel" />
-      <DescribeField label="trustedRepositories" :value="(summary.trustedRepositories || []).join(', ')" />
+    <DescribeSection title="Provenance" hint="Build origin & delivery-chain integrity.">
+      <DescribeField label="requireVoucher" :value="yn(summary.requireVoucher)" :tone="boolTone(summary.requireVoucher)"
+        hint="Require a VBBI provenance voucher proving build origin and delivery chain." />
+      <DescribeField label="enforceHmacChain" :value="yn(summary.enforceHmacChain)" :tone="boolTone(summary.enforceHmacChain)"
+        hint="Validate the HMAC hash chain across pipeline stages (anti-tamper)." />
+      <DescribeField label="minSlsaLevel" :value="summary.minSlsaLevel"
+        hint="Minimum SLSA build-maturity level required (0–3)." />
+      <DescribeField label="trustedRepositories" :items="summary.trustedRepositories || []"
+        hint="Only these source repositories are accepted as artifact origin." />
     </DescribeSection>
 
-    <DescribeSection title="Vulnerability Policy">
-      <DescribeField label="maxAllowedSeverity" :value="summary.maxAllowedSeverity" />
-      <DescribeField label="failOnFixable" :value="yn(summary.failOnFixable)" :tone="boolTone(summary.failOnFixable)" />
+    <DescribeSection title="Vulnerability Policy" hint="CVE thresholds applied to the image scan.">
+      <DescribeField label="maxAllowedSeverity" :value="summary.maxAllowedSeverity"
+        hint="Highest CVE severity tolerated before the policy acts." />
+      <DescribeField label="failOnFixable" :value="yn(summary.failOnFixable)" :tone="boolTone(summary.failOnFixable)"
+        hint="Fail even below threshold when a fix is available for the vulnerability." />
     </DescribeSection>
 
-    <DescribeSection title="SBOM Policy">
-      <DescribeField label="enforceSBOM" :value="yn(summary.enforceSBOM)" :tone="boolTone(summary.enforceSBOM)" />
-      <DescribeField label="forbiddenPackages" :value="(sbomPolicy.forbiddenPackages || []).map(pkgLabel).join(', ')" />
+    <DescribeSection title="SBOM Policy" hint="Software Bill of Materials requirements.">
+      <DescribeField label="enforceSBOM" :value="yn(summary.enforceSBOM)" :tone="boolTone(summary.enforceSBOM)"
+        hint="Require a Software Bill of Materials to be present and valid." />
+      <DescribeField label="forbiddenPackages" :items="(sbomPolicy.forbiddenPackages || []).map(pkgLabel)"
+        hint="Package names (optionally version-bounded as name@maxVersion) that are disallowed." />
     </DescribeSection>
 
-    <DescribeSection v-if="Object.keys(slsa).length" title="SLSA Provenance">
-      <DescribeField label="enforceSlsa" :value="yn(slsa.enforceSlsa)" :tone="boolTone(slsa.enforceSlsa)" />
-      <DescribeField label="requiredLevel" :value="slsa.requiredLevel" />
-      <DescribeField label="trustedIssuers" :value="(slsa.trustedIssuers || []).join(', ')" />
-      <DescribeField label="trustedBuilders" :value="(slsa.trustedBuilders || []).join(', ')" />
-      <DescribeField label="allowedBuildTypes" :value="(slsa.allowedBuildTypes || []).join(', ')" />
+    <DescribeSection v-if="Object.keys(slsa).length" title="SLSA Provenance" hint="SLSA v1.0 provenance attestation enforcement.">
+      <DescribeField label="enforceSlsa" :value="yn(slsa.enforceSlsa)" :tone="boolTone(slsa.enforceSlsa)"
+        hint="Enforce a SLSA v1.0 provenance attestation (e.g. slsa-github-generator)." />
+      <DescribeField label="requiredLevel" :value="slsa.requiredLevel"
+        hint="Minimum SLSA level required by the provenance attestation." />
+      <DescribeField label="trustedIssuers" :items="slsa.trustedIssuers || []"
+        hint="Issuers allowed to sign the SLSA provenance (distinct from Cosign issuers)." />
+      <DescribeField label="trustedBuilders" :items="slsa.trustedBuilders || []"
+        hint="Allowed builder IDs (predicate.runDetails.builder.id)." />
+      <DescribeField label="allowedBuildTypes" :items="slsa.allowedBuildTypes || []"
+        hint="Allowed build types (predicate.buildDefinition.buildType)." />
     </DescribeSection>
 
-    <DescribeSection v-if="Object.keys(openVex).length" title="OpenVEX">
-      <DescribeField label="enforceOpenVex" :value="yn(openVex.enforceOpenVex)" :tone="boolTone(openVex.enforceOpenVex)" />
-      <DescribeField label="requireStatements" :value="yn(openVex.requireStatements)" :tone="boolTone(openVex.requireStatements)" />
+    <DescribeSection v-if="Object.keys(openVex).length" title="OpenVEX" hint="OpenVEX v0.2.0 exploitability attestations.">
+      <DescribeField label="enforceOpenVex" :value="yn(openVex.enforceOpenVex)" :tone="boolTone(openVex.enforceOpenVex)"
+        hint="Enforce OpenVEX vulnerability-exploitability attestations." />
+      <DescribeField label="requireStatements" :value="yn(openVex.requireStatements)" :tone="boolTone(openVex.requireStatements)"
+        hint="Require at least one OpenVEX statement to be present." />
     </DescribeSection>
 
-    <DescribeSection v-if="Object.keys(securityScan).length" title="Security Scan">
-      <DescribeField label="enforceSecurityScan" :value="yn(securityScan.enforceSecurityScan)" :tone="boolTone(securityScan.enforceSecurityScan)" />
-      <DescribeField label="requireAttestation" :value="yn(securityScan.requireAttestation)" :tone="boolTone(securityScan.requireAttestation)" />
-      <DescribeField label="failOnSecrets" :value="yn(securityScan.failOnSecrets)" :tone="boolTone(securityScan.failOnSecrets)" />
-      <DescribeField label="maxIacSeverity" :value="securityScan.maxIacSeverity" />
-      <DescribeField label="maxSastSeverity" :value="securityScan.maxSastSeverity" />
+    <DescribeSection v-if="Object.keys(securityScan).length" title="Security Scan" hint="OSS code-scan attestation (gitleaks / checkov / semgrep).">
+      <DescribeField label="enforceSecurityScan" :value="yn(securityScan.enforceSecurityScan)" :tone="boolTone(securityScan.enforceSecurityScan)"
+        hint="Enforce an OSS security-scan attestation." />
+      <DescribeField label="requireAttestation" :value="yn(securityScan.requireAttestation)" :tone="boolTone(securityScan.requireAttestation)"
+        hint="Require the scan attestation to be present." />
+      <DescribeField label="failOnSecrets" :value="yn(securityScan.failOnSecrets)" :tone="boolTone(securityScan.failOnSecrets)"
+        hint="Fail if the scan detected committed secrets (gitleaks)." />
+      <DescribeField label="maxIacSeverity" :value="securityScan.maxIacSeverity"
+        hint="Max IaC (checkov) severity tolerated." />
+      <DescribeField label="maxSastSeverity" :value="securityScan.maxSastSeverity"
+        hint="Max SAST (semgrep) severity tolerated." />
     </DescribeSection>
 
-    <DescribeSection title="Manifest Hash">
-      <DescribeField label="enabled" :value="yn(mh.enabled)" :tone="boolTone(mh.enabled)" />
-      <DescribeField label="enforcementAction" :value="mh.enforcementAction" />
-      <DescribeField v-if="mh.isAuditMode" label="mode" value="audit (alert only)" tone="warn" />
+    <DescribeSection title="Manifest Hash" hint="Deployed manifest must match the attested expected hash.">
+      <DescribeField label="enabled" :value="yn(mh.enabled)" :tone="boolTone(mh.enabled)"
+        hint="Enforce that the deployed manifest matches the attested expected hash." />
+      <DescribeField label="enforcementAction" :value="mh.enforcementAction"
+        hint="Action on hash mismatch — Reject blocks the workload; Alert only warns." />
+      <DescribeField v-if="mh.isAuditMode" label="mode" value="audit (alert only)" tone="warn"
+        hint="Audit mode: mismatches are alerted, not blocked." />
     </DescribeSection>
 
-    <DescribeSection v-if="Object.keys(policyBinding).length" title="Policy Binding">
-      <DescribeField label="enabled" :value="yn(policyBinding.enabled)" :tone="boolTone(policyBinding.enabled)" />
-      <DescribeField label="requireAttestationType" :value="policyBinding.requireAttestationType" />
+    <DescribeSection v-if="Object.keys(policyBinding).length" title="Policy Binding" hint="Which attestation predicate must be bound to the image.">
+      <DescribeField label="enabled" :value="yn(policyBinding.enabled)" :tone="boolTone(policyBinding.enabled)"
+        hint="Require an attestation of the expected predicate type to be present." />
+      <DescribeField label="requireAttestationType" :value="policyBinding.requireAttestationType"
+        hint="Predicate type the bound attestation must declare." />
     </DescribeSection>
 
-    <DescribeSection title="Runtime Enforcement">
-      <DescribeField label="enabled" :value="yn(runtime.enabled)" :tone="boolTone(runtime.enabled)" />
-      <DescribeField label="onPolicyDrift" :value="summary.onPolicyDrift" />
-      <DescribeField label="onVulnerabilityFound" :value="summary.onVulnerabilityFound" />
+    <DescribeSection title="Runtime Enforcement" hint="Actions taken at runtime when policy is violated.">
+      <DescribeField label="enabled" :value="yn(runtime.enabled)" :tone="boolTone(runtime.enabled)"
+        hint="Enable runtime enforcement actions for this policy." />
+      <DescribeField label="onPolicyDrift" :value="summary.onPolicyDrift"
+        hint="Action when runtime state drifts from policy — Alert, Isolate, or Kill." />
+      <DescribeField label="onVulnerabilityFound" :value="summary.onVulnerabilityFound"
+        hint="Action when a vulnerability is found at runtime — Alert or Kill." />
     </DescribeSection>
 
-    <DescribeSection v-if="customRules.length" :title="`Custom Rules (CEL) · ${customRules.length}`" :grid="false">
+    <DescribeSection v-if="customRules.length" :title="`Custom Rules (CEL) · ${customRules.length}`" :grid="false"
+      hint="Dynamic CEL rules evaluated against {voucher, image, zta, vex, sbom, securityScan}.">
       <div v-for="(rule, i) in customRules" :key="i" class="rule-row">
         <div class="rule-head">
           <span class="rule-name">{{ rule.name || 'unnamed' }}</span>

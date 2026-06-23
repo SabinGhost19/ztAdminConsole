@@ -2,14 +2,24 @@
 withDefaults(defineProps<{
   title: string
   grid?: boolean
+  hint?: string
 }>(), {
   grid: true,
+  hint: '',
 })
 </script>
 
 <template>
   <div class="describe-section">
-    <div class="describe-section-title">{{ title }}</div>
+    <div class="describe-section-title">
+      {{ title }}
+      <v-tooltip v-if="hint" location="top" max-width="340">
+        <template #activator="{ props: tip }">
+          <v-icon v-bind="tip" size="12" class="section-help">mdi-help-circle-outline</v-icon>
+        </template>
+        <span>{{ hint }}</span>
+      </v-tooltip>
+    </div>
     <div v-if="grid" class="describe-fields-grid">
       <slot />
     </div>
@@ -30,6 +40,12 @@ withDefaults(defineProps<{
   letter-spacing: 0.1em;
   color: rgba(var(--v-theme-on-surface), 0.38);
   margin-bottom: 8px;
+}
+.section-help {
+  margin-left: 4px;
+  color: rgba(var(--v-theme-on-surface), 0.3);
+  cursor: help;
+  vertical-align: text-top;
 }
 .describe-fields-grid {
   display: grid;

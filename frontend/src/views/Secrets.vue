@@ -14,24 +14,57 @@ const isLoading = computed(() => dashboardStore.loadingSecrets)
 const secrets = computed(() => dashboardStore.secrets)
 const applications = computed(() => dashboardStore.applications)
 
-const form = ref({
-  name: '',
-  namespace: 'default',
-  applicationName: '',
-  workloadName: '',
-  remotePath: '',
-  remoteKey: 'password',
-  localKey: 'DB_PASSWORD',
-  mappingType: 'EnvVar',
-  mountPath: '/var/run/secrets/certs/',
-  targetSecret: '',
-  refreshInterval: '1m'
-})
+// Match the ZeroTrustSecret CRD enums exactly.
+const WORKLOAD_KINDS = ['Deployment', 'StatefulSet', 'DaemonSet']
+const MAPPING_TYPES = ['EnvVar', 'VolumeMount']
+
+interface MappingRow { remoteKey: string; localKey: string; type: string; mountPath: string }
+
+function blankMapping(): MappingRow {
+  return { remoteKey: '', localKey: '', type: 'EnvVar', mountPath: '' }
+}
+
+function defaultForm() {
+  return {
+    name: '',
+    namespace: 'default',
+    applicationName: '',
+    workloadKind: 'Deployment',
+    workloadName: '',
+    remotePath: '',
+    targetSecret: '',
+    mappings: [{ remoteKey: 'password', localKey: 'DB_PASSWORD', type: 'EnvVar', mountPath: '' }] as MappingRow[],
+    requireVerifiedStatus: true,
+    refreshInterval: '1m',
+  }
+}
+
+const form = ref(defaultForm())
 const isSubmitting = ref(false)
+const editing = ref<{ namespace: string; name: string } | null>(null)
+const isEditing = computed(() => editing.value !== null)
 const expandedZtsUid = ref<string | null>(null)
+
+const required = (v: any) => (!!v && String(v).trim().length > 0) || 'Obligatoriu'
+
+// Client-side gating so an empty/partial declaration is never submitted (G6).
+const canSubmit = computed(() => {
+  const f = form.value
+  if (!f.name.trim() || !f.namespace.trim() || !f.applicationName.trim()) return false
+  if (!f.workloadName.trim() || !f.remotePath.trim() || !f.targetSecret.trim()) return false
+  if (!f.mappings.length) return false
+  return f.mappings.every((m) =>
+    m.remoteKey.trim() && m.localKey.trim() && (m.type !== 'VolumeMount' || m.mountPath.trim()),
+  )
+})
 
 function toggleZtsExpand(uid: string) {
   expandedZtsUid.value = expandedZtsUid.value === uid ? null : uid
+}
+
+function addMapping() { form.value.mappings.push(blankMapping()) }
+function removeMapping(i: number) {
+  if (form.value.mappings.length > 1) form.value.mappings.splice(i, 1)
 }
 
 // Maps the operator-computed ZTS phase to a neutral status chip. The phase now
@@ -57,11 +90,6 @@ function phaseIcon(phase?: string): string {
     default: return 'mdi-help-circle-outline'
   }
 }
-function conditionColor(status?: string): string {
-  if (status === 'True') return 'success'
-  if (status === 'False') return 'error'
-  return 'secondary'
-}
 
 onMounted(() => {
   Promise.all([
@@ -70,66 +98,102 @@ onMounted(() => {
   ]).catch(() => undefined)
 })
 
+function resetForm() {
+  form.value = defaultForm()
+  editing.value = null
+}
+
+function startEdit(zts: any) {
+  const spec = zts.spec || {}
+  const mapping: MappingRow[] = (spec.secretData?.mapping || []).map((m: any) => ({
+    remoteKey: m.remoteKey || '',
+    localKey: m.localKey || '',
+    type: m.type || 'EnvVar',
+    mountPath: m.mountPath || '',
+  }))
+  form.value = {
+    name: zts.metadata?.name || '',
+    namespace: zts.metadata?.namespace || 'default',
+    applicationName: spec.applicationRef?.name || '',
+    workloadKind: spec.targetWorkload?.kind || 'Deployment',
+    workloadName: spec.targetWorkload?.name || '',
+    remotePath: spec.secretData?.remotePath || '',
+    targetSecret: spec.targetSecretName || zts.summary?.targetSecretName || '',
+    mappings: mapping.length ? mapping : [blankMapping()],
+    requireVerifiedStatus: spec.zeroTrustConditions?.requireVerifiedStatus ?? true,
+    refreshInterval: spec.lifecycle?.refreshInterval || '10m',
+  }
+  editing.value = { namespace: zts.metadata.namespace, name: zts.metadata.name }
+  if (typeof window !== 'undefined') window.scrollTo({ top: 0, behavior: 'smooth' })
+}
+
+function buildPayload() {
+  return {
+    name: form.value.name,
+    namespace: form.value.namespace,
+    applicationRef: {
+      name: form.value.applicationName,
+      namespace: form.value.namespace,
+    },
+    targetWorkload: {
+      kind: form.value.workloadKind,
+      name: form.value.workloadName,
+      namespace: form.value.namespace,
+    },
+    secretStoreRef: {
+      kind: 'ClusterSecretStore',
+      name: 'vault-backend',
+    },
+    targetSecretName: form.value.targetSecret,
+    secretData: {
+      remotePath: form.value.remotePath,
+      mapping: form.value.mappings.map((m) => ({
+        remoteKey: m.remoteKey,
+        localKey: m.localKey,
+        type: m.type,
+        mountPath: m.type === 'VolumeMount' ? m.mountPath : undefined,
+      })),
+    },
+    zeroTrustConditions: {
+      requireVerifiedStatus: form.value.requireVerifiedStatus,
+      timeBasedAccess: {
+        enabled: false,
+      },
+    },
+    lifecycle: {
+      refreshInterval: form.value.refreshInterval,
+      onUpdateAction: 'RollingRestart',
+    },
+  }
+}
+
 async function submitSecretDeclaration() {
+  if (!canSubmit.value) return
   isSubmitting.value = true
   try {
-    const payload = {
-      name: form.value.name,
-      namespace: form.value.namespace,
-      applicationRef: {
-        name: form.value.applicationName,
-        namespace: form.value.namespace,
-      },
-      targetWorkload: {
-        kind: 'Deployment',
-        name: form.value.workloadName,
-        namespace: form.value.namespace,
-      },
-      secretStoreRef: {
-        kind: 'ClusterSecretStore',
-        name: 'vault-backend',
-      },
-      targetSecretName: form.value.targetSecret,
-      secretData: {
-        remotePath: form.value.remotePath,
-        mapping: [
-          {
-            remoteKey: form.value.remoteKey,
-            localKey: form.value.localKey,
-            type: form.value.mappingType,
-            mountPath: form.value.mappingType === 'VolumeMount' ? form.value.mountPath : undefined,
-          },
-        ],
-      },
-      zeroTrustConditions: {
-        requireVerifiedStatus: true,
-        timeBasedAccess: {
-          enabled: false,
-        },
-      },
-      lifecycle: {
-        refreshInterval: form.value.refreshInterval,
-        onUpdateAction: 'RollingRestart',
-      },
+    const payload = buildPayload()
+    const updating = isEditing.value
+    if (updating && editing.value) {
+      await api.put(`/zts/${editing.value.namespace}/${editing.value.name}`, payload)
+    } else {
+      await api.post('/zts/', payload)
     }
-    
-    await api.post('/zts/', payload)
     await dashboardStore.fetchSecrets(true)
     await dashboardStore.fetchOverview(true)
-    
+
     notifyStore.addAlert({
-      error_code: 'ZTS_CREATED_SUCCESS',
-      message: `Delegația Zero-Trust Secret '${form.value.name}' generată.`,
-      technical_details: `Path Vault delegat: ${form.value.remotePath}`,
+      error_code: updating ? 'ZTS_UPDATED_SUCCESS' : 'ZTS_CREATED_SUCCESS',
+      message: updating
+        ? `Delegația Zero-Trust Secret '${payload.name}' actualizată.`
+        : `Delegația Zero-Trust Secret '${payload.name}' generată.`,
+      technical_details: `Path Vault delegat: ${payload.secretData.remotePath}`,
       component: 'ZTS_BUILDER',
       trace_id: Math.random().toString(36).substring(2),
-      action_required: 'Nu faceți nimic. Operatorul ZTA va valida imaginea, iar ESO va prelua secretul.',
+      action_required: 'Operatorul ZTA validează, iar ESO preia secretul din Vault.',
       type: 'warning'
     })
-    
-    form.value.name = ''
-    form.value.remotePath = ''
-    form.value.targetSecret = ''
+
+    resetForm()
   } catch (err) {
   } finally {
     isSubmitting.value = false
@@ -139,6 +203,9 @@ async function submitSecretDeclaration() {
 async function revokeZts(namespace: string, name: string) {
   try {
     await api.delete(`/zts/${namespace}/${name}`)
+    if (editing.value && editing.value.namespace === namespace && editing.value.name === name) {
+      resetForm()
+    }
     await dashboardStore.fetchSecrets(true)
     await dashboardStore.fetchOverview(true)
     notifyStore.addAlert({
@@ -158,39 +225,83 @@ async function revokeZts(namespace: string, name: string) {
 <template>
   <div>
     <h1 class="text-h5 font-weight-medium mb-4 text-primary">Secret Vault (ZTS Management)</h1>
-    
+
     <v-row>
       <v-col cols="12" md="5" lg="4">
         <v-card class="gc-border h-100" style="border: 1px solid rgba(var(--v-theme-on-surface), 0.12)" flat>
-          <v-card-title class="font-weight-medium pb-2 text-primary">Delegare Vault</v-card-title>
+          <v-card-title class="font-weight-medium pb-2 text-primary d-flex align-center">
+            <span>{{ isEditing ? `Editează: ${editing?.name}` : 'Delegare Vault' }}</span>
+            <v-spacer />
+            <v-btn v-if="isEditing" size="x-small" variant="text" color="secondary" @click="resetForm">Anulează</v-btn>
+          </v-card-title>
           <v-card-text>
-            <p class="text-caption text-secondary" style="margin-bottom: 24px;">Zero-Trust Secret. Backend-ul creează CRD, operatorul confirmă, ESO trage secretul.</p>
-            
-            <v-text-field v-model="form.name" label="Nume CRD (ZTS)" variant="outlined" density="compact" hide-details="auto" class="mb-4"></v-text-field>
-            <v-text-field v-model="form.namespace" label="Target Namespace" variant="outlined" density="compact" hide-details="auto" class="mb-4"></v-text-field>
-            <v-select v-model="form.applicationName" :items="applications.map((item: any) => item.metadata.name)" label="Application Ref" variant="outlined" density="compact" hide-details="auto" class="mb-4"></v-select>
-            <v-text-field v-model="form.workloadName" label="Target Workload Name" variant="outlined" density="compact" hide-details="auto" class="mb-4"></v-text-field>
-            <v-text-field v-model="form.remotePath" label="HashiCorp Vault Path" placeholder="secret/data/product/db" variant="outlined" density="compact" hide-details="auto" class="mb-4"></v-text-field>
-            <v-text-field v-model="form.targetSecret" label="Mapped Kubernetes Secret" variant="outlined" density="compact" hide-details="auto" class="mb-4"></v-text-field>
-            <v-row class="mb-4">
-              <v-col cols="12" md="6">
-                <v-text-field v-model="form.remoteKey" label="Remote Key" variant="outlined" density="compact" hide-details="auto"></v-text-field>
+            <p class="text-caption text-secondary" style="margin-bottom: 16px;">
+              Zero-Trust Secret: backend-ul creează CRD, operatorul confirmă, ESO trage secretul.
+              Valoarea trebuie să existe deja în Vault la path-ul de mai jos.
+            </p>
+
+            <v-text-field v-model="form.name" :rules="[required]" :disabled="isEditing" label="Nume CRD (ZTS)" variant="outlined" density="compact" hide-details="auto" class="mb-4"></v-text-field>
+            <v-text-field v-model="form.namespace" :rules="[required]" :disabled="isEditing" label="Target Namespace" variant="outlined" density="compact" hide-details="auto" class="mb-4"></v-text-field>
+            <v-select v-model="form.applicationName" :rules="[required]" :items="applications.map((item: any) => item.metadata.name)" label="Application Ref" variant="outlined" density="compact" hide-details="auto" class="mb-4"></v-select>
+
+            <v-row dense class="mb-1">
+              <v-col cols="5">
+                <v-select v-model="form.workloadKind" :items="WORKLOAD_KINDS" label="Workload Kind" variant="outlined" density="compact" hide-details="auto"></v-select>
               </v-col>
-              <v-col cols="12" md="6">
-                <v-text-field v-model="form.localKey" label="Local Key" variant="outlined" density="compact" hide-details="auto"></v-text-field>
+              <v-col cols="7">
+                <v-text-field v-model="form.workloadName" :rules="[required]" label="Workload Name" variant="outlined" density="compact" hide-details="auto"></v-text-field>
               </v-col>
             </v-row>
-            <v-select v-model="form.mappingType" :items="['EnvVar', 'VolumeMount']" label="Mapping Type" variant="outlined" density="compact" hide-details="auto" class="mb-4"></v-select>
-            <v-text-field v-if="form.mappingType === 'VolumeMount'" v-model="form.mountPath" label="Mount Path" variant="outlined" density="compact" hide-details="auto" class="mb-4"></v-text-field>
+
+            <v-text-field v-model="form.remotePath" :rules="[required]" label="HashiCorp Vault Path" placeholder="secret/data/product/db" variant="outlined" density="compact" hide-details="auto" class="mt-3 mb-4"></v-text-field>
+            <v-text-field v-model="form.targetSecret" :rules="[required]" label="Mapped Kubernetes Secret" variant="outlined" density="compact" hide-details="auto" class="mb-4"></v-text-field>
+
+            <!-- Secret mappings (supports multiple keys → multiple env/volume injections) -->
+            <div class="d-flex align-center mb-2">
+              <span class="text-caption text-secondary font-weight-medium">Secret Mappings</span>
+              <v-spacer />
+              <v-btn size="x-small" variant="text" color="primary" prepend-icon="mdi-plus" @click="addMapping">Adaugă</v-btn>
+            </div>
+            <div v-for="(m, i) in form.mappings" :key="i" class="mapping-editor mb-3">
+              <div class="d-flex align-center mb-2">
+                <span class="text-caption text-secondary">Mapping #{{ i + 1 }}</span>
+                <v-spacer />
+                <v-btn v-if="form.mappings.length > 1" size="x-small" variant="text" color="error" icon="mdi-close" title="Elimină maparea" @click="removeMapping(i)"></v-btn>
+              </div>
+              <v-row dense>
+                <v-col cols="6">
+                  <v-text-field v-model="m.remoteKey" :rules="[required]" label="Remote Key" variant="outlined" density="compact" hide-details="auto"></v-text-field>
+                </v-col>
+                <v-col cols="6">
+                  <v-text-field v-model="m.localKey" :rules="[required]" label="Local Key" variant="outlined" density="compact" hide-details="auto"></v-text-field>
+                </v-col>
+                <v-col cols="6">
+                  <v-select v-model="m.type" :items="MAPPING_TYPES" label="Type" variant="outlined" density="compact" hide-details="auto"></v-select>
+                </v-col>
+                <v-col v-if="m.type === 'VolumeMount'" cols="6">
+                  <v-text-field v-model="m.mountPath" :rules="[required]" label="Mount Path" placeholder="/var/run/secrets/..." variant="outlined" density="compact" hide-details="auto"></v-text-field>
+                </v-col>
+              </v-row>
+            </div>
+
+            <v-switch
+              v-model="form.requireVerifiedStatus"
+              color="primary"
+              density="compact"
+              hide-details
+              class="mb-2"
+              label="Require Verified ZTA (zero-trust gate)"
+            ></v-switch>
+
             <v-text-field v-model="form.refreshInterval" label="Refresh Interval" placeholder="ex. 1m, 10m" variant="outlined" density="compact" hide-details="auto" class="mb-4"></v-text-field>
-            
-            <v-btn :loading="isSubmitting" :disabled="!canWriteSecrets" @click="submitSecretDeclaration" color="primary" block variant="flat" elevation="0" class="mt-6 text-none font-weight-medium">
-              {{ canWriteSecrets ? 'Authorize ESO Pull' : 'Necesită platform-engineer' }}
+
+            <v-btn :loading="isSubmitting" :disabled="!canWriteSecrets || !canSubmit" @click="submitSecretDeclaration" color="primary" block variant="flat" elevation="0" class="mt-2 text-none font-weight-medium">
+              {{ !canWriteSecrets ? 'Necesită platform-engineer' : (isEditing ? 'Update ESO Delegation' : 'Authorize ESO Pull') }}
             </v-btn>
           </v-card-text>
         </v-card>
       </v-col>
-      
+
       <v-col cols="12" md="7" lg="8">
         <v-card class="gc-border h-100" style="border: 1px solid rgba(var(--v-theme-on-surface), 0.12)" flat>
            <v-card-title class="font-weight-medium pb-2 text-error">
@@ -240,6 +351,7 @@ async function revokeZts(namespace: string, name: string) {
                       </v-chip>
                     </td>
                     <td class="text-right">
+                      <v-btn v-if="canWriteSecrets" @click.stop="startEdit(zts)" color="primary" size="small" variant="text" icon="mdi-pencil" title="Editează delegarea ZTS"></v-btn>
                       <v-btn v-if="canWriteSecrets" @click.stop="revokeZts(zts.metadata.namespace, zts.metadata.name)" color="error" size="small" variant="text" icon="mdi-delete" title="Sterge delegarea ZTS"></v-btn>
                     </td>
                   </tr>
@@ -264,16 +376,6 @@ async function revokeZts(namespace: string, name: string) {
                             <span v-if="zts.summary?.lastError" class="text-caption" style="color: rgb(var(--v-theme-warning)); word-break: break-word;">
                               {{ zts.summary.lastError }}
                             </span>
-                          </div>
-                          <div v-if="zts.summary?.conditions?.length" class="mt-2">
-                            <div v-for="(c, i) in zts.summary.conditions" :key="i" class="zts-condition-row">
-                              <v-icon size="13" :color="conditionColor(c.status)" class="mr-1">
-                                {{ c.status === 'True' ? 'mdi-check-circle' : 'mdi-close-circle' }}
-                              </v-icon>
-                              <span class="zc-type">{{ c.type }}</span>
-                              <span class="zc-reason">{{ c.reason }}</span>
-                              <span v-if="c.message" class="zc-message text-secondary">{{ c.message }}</span>
-                            </div>
                           </div>
                         </div>
 
@@ -487,31 +589,6 @@ async function revokeZts(namespace: string, name: string) {
   margin-bottom: 4px;
 }
 
-.zts-condition-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 3px 0;
-  font-family: 'Roboto Mono', monospace;
-  font-size: 0.74rem;
-}
-.zc-type {
-  font-weight: 600;
-  color: rgba(var(--v-theme-on-surface), 0.85);
-  min-width: 64px;
-}
-.zc-reason {
-  padding: 1px 6px;
-  border-radius: 4px;
-  background: rgba(var(--v-theme-on-surface), 0.07);
-  color: rgba(var(--v-theme-on-surface), 0.6);
-  font-size: 0.68rem;
-}
-.zc-message {
-  font-size: 0.7rem;
-  word-break: break-word;
-}
-
 .dm-remote { color: rgba(var(--v-theme-on-surface), 0.75); }
 .dm-local  { color: rgba(var(--v-theme-on-surface), 0.88); font-weight: 500; }
 .dm-type   {
@@ -523,4 +600,11 @@ async function revokeZts(namespace: string, name: string) {
   margin-left: 4px;
 }
 .dm-mount  { font-size: 0.72rem; margin-left: 4px; }
+
+.mapping-editor {
+  border: 1px solid rgba(var(--v-theme-on-surface), 0.10);
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: rgba(var(--v-theme-on-surface), 0.02);
+}
 </style>

@@ -77,6 +77,22 @@ const findingRows = computed<Record<string, any>[]>(() =>
   })),
 )
 
+const hasFindings = computed(() => {
+  const c = selectedItem.value?.counts || {}
+  return (c.secrets || 0) + (c.sast || 0) + (c.iac || 0) > 0
+})
+
+// Explains the confusing "Compliant / verified / pass" verdict on a workload that
+// still lists HIGH findings: the verdict is threshold-based (gating), so findings
+// at or below the policy's tolerated severity are advisory and do not block.
+const gatingNote = computed(() => {
+  const it = selectedItem.value
+  if (!it || !hasFindings.value) return ''
+  if (!it.verified && it.enforced) return '' // failure path is covered by the reason alert
+  if (!it.enforced) return 'No security-scan policy is enforced for this workload — findings are informational only.'
+  return "Findings are within the policy's tolerated severity threshold — advisory, they don't block admission (gating: pass)."
+})
+
 function sevColor(sev?: string): string {
   switch (String(sev || '').toUpperCase()) {
     case 'CRITICAL': return 'error'
@@ -221,6 +237,10 @@ onMounted(() => {
       >
         {{ selectedItem.reason }}
       </v-alert>
+      <div v-if="gatingNote" class="d-flex align-center text-caption text-medium-emphasis mx-4 mb-2">
+        <v-icon size="14" class="mr-1">mdi-information-outline</v-icon>
+        <span>{{ gatingNote }}</span>
+      </div>
       <v-data-table
         :headers="findingHeaders"
         :items="findingRows"
