@@ -1,3 +1,10 @@
+# [1.22.0](https://github.com/SabinGhost19/ztAdminConsole/compare/v1.21.0...v1.22.0) (2026-06-23)
+
+
+### Features
+
+* improved sca overview tab ([00a36d7](https://github.com/SabinGhost19/ztAdminConsole/commit/00a36d764f46341af46e4e341161914750205057))
+
 # [1.21.0](https://github.com/SabinGhost19/ztAdminConsole/compare/v1.20.0...v1.21.0) (2026-06-23)
 
 
