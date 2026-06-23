@@ -16,6 +16,9 @@ export default defineConfig({
           if (id.includes('vuetify')) {
             return 'vuetify'
           }
+          if (id.includes('apexcharts')) {
+            return 'charts'
+          }
           if (id.includes('axios') || id.includes('pinia') || id.includes('vue-router')) {
             return 'data-client'
           }

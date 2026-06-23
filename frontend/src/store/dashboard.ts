@@ -6,6 +6,7 @@ type AnyRecord = Record<string, any>
 export const useDashboardStore = defineStore('dashboard', {
   state: () => ({
     overview: null as AnyRecord | null,
+    overviewFetchedAt: null as string | null,
     loadingOverview: false,
     jitAnalytics: null as AnyRecord | null,
     breakglassAnalytics: null as AnyRecord | null,
@@ -47,6 +48,15 @@ export const useDashboardStore = defineStore('dashboard', {
     recentEvents(state) {
       return state.overview?.recentEvents || []
     },
+    ztaPhases(state) {
+      return state.overview?.ztaPhases || {}
+    },
+    jitStates(state) {
+      return state.overview?.jitStates || {}
+    },
+    overviewUpdatedAt(state): string | null {
+      return state.overviewFetchedAt
+    },
     applicationOptions(state) {
       return state.applications.map((item) => ({
         title: `${item.metadata?.namespace || 'default'}/${item.metadata?.name || 'unknown'}`,
@@ -82,6 +92,7 @@ export const useDashboardStore = defineStore('dashboard', {
       try {
         const response = await api.get('/overview/')
         this.overview = response.data
+        this.overviewFetchedAt = new Date().toISOString()
         return response.data
       } finally {
         this.loadingOverview = false
