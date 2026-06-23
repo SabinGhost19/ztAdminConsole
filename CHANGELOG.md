@@ -1,3 +1,10 @@
+## [1.22.1](https://github.com/SabinGhost19/ztAdminConsole/compare/v1.22.0...v1.22.1) (2026-06-23)
+
+
+### Bug Fixes
+
+* zts form ([6d46fff](https://github.com/SabinGhost19/ztAdminConsole/commit/6d46ffffa45ad31054eadc62e9aba4781d1a31a8))
+
 # [1.22.0](https://github.com/SabinGhost19/ztAdminConsole/compare/v1.21.0...v1.22.0) (2026-06-23)
 
 
