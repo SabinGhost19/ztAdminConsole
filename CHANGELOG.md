@@ -1,3 +1,10 @@
+# [1.21.0](https://github.com/SabinGhost19/ztAdminConsole/compare/v1.20.0...v1.21.0) (2026-06-23)
+
+
+### Features
+
+* new overview interface ([6e32626](https://github.com/SabinGhost19/ztAdminConsole/commit/6e326260ad1b81faa3a50dd87e5692a50e1c785d))
+
 # [1.20.0](https://github.com/SabinGhost19/ztAdminConsole/compare/v1.19.0...v1.20.0) (2026-06-22)
 
 
