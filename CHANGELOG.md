@@ -1,3 +1,10 @@
+## [1.22.4](https://github.com/SabinGhost19/ztAdminConsole/compare/v1.22.3...v1.22.4) (2026-06-24)
+
+
+### Bug Fixes
+
+* zta view pop up error ([1acbba6](https://github.com/SabinGhost19/ztAdminConsole/commit/1acbba6592bccd46f972b4966ef26591f48316c9))
+
 ## [1.22.3](https://github.com/SabinGhost19/ztAdminConsole/compare/v1.22.2...v1.22.3) (2026-06-24)
 
 
