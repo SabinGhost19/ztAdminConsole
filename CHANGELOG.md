@@ -1,3 +1,10 @@
+## [1.22.3](https://github.com/SabinGhost19/ztAdminConsole/compare/v1.22.2...v1.22.3) (2026-06-24)
+
+
+### Bug Fixes
+
+* zta view ([5016ed6](https://github.com/SabinGhost19/ztAdminConsole/commit/5016ed69c072ca6d5a26f323b54ae4d540ef2ef4))
+
 ## [1.22.2](https://github.com/SabinGhost19/ztAdminConsole/compare/v1.22.1...v1.22.2) (2026-06-24)
 
 
