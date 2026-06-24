@@ -860,7 +860,7 @@ function submitDeclaration() {
                       {{ applicationBadge(item.raw.app) }}
                     </v-chip>
                     <v-chip
-                      v-if="guacIngestionSeverity(item.raw.app)"
+                      v-if="guacIngestionSeverity(item.raw.app) && guacIngestionSeverity(item.raw.app) !== 'success'"
                       :color="guacIngestionSeverity(item.raw.app) || undefined"
                       size="x-small"
                       variant="tonal"
@@ -899,16 +899,20 @@ function submitDeclaration() {
                   <div
                     v-if="item.raw.app.summary.isAuditAlert"
                     class="text-caption text-medium-emphasis mt-1 d-flex align-center ga-1"
+                    style="min-width: 0;"
+                    :title="`Audit-mode alert — cause: ${auditAlertCause(item.raw.app.summary)} · manifest hash: ${manifestHashState(item.raw.app.summary)}`"
                   >
                     <v-icon size="x-small">mdi-information-outline</v-icon>
-                    Audit-mode alert — cause: {{ auditAlertCause(item.raw.app.summary) }} · manifest hash: {{ manifestHashState(item.raw.app.summary) }}
+                    <span class="zta-option__msg">Audit-mode alert — {{ auditAlertCause(item.raw.app.summary) }}</span>
                   </div>
                   <div
                     v-else-if="item.raw.app.summary.lastError"
                     class="text-caption text-error mt-1 d-flex align-center ga-1"
+                    style="min-width: 0;"
+                    :title="item.raw.app.summary.lastError"
                   >
                     <v-icon size="x-small">mdi-alert-octagon-outline</v-icon>
-                    {{ item.raw.app.summary.lastErrorSummary || item.raw.app.summary.lastError }}
+                    <span class="zta-option__msg">{{ item.raw.app.summary.errorCategory || 'Verification failed' }}</span>
                   </div>
                 </v-list-item>
               </template>
@@ -1680,6 +1684,16 @@ function submitDeclaration() {
 }
 :deep(.zta-option__title) {
   line-height: 1.3;
+}
+/* Keep the per-app message to a single, ellipsised line so a long verification
+   error can't blow up the dropdown height. Full text stays available on hover
+   via the row's title attribute. */
+:deep(.zta-option__msg) {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .font-mono {
   font-family: 'Roboto Mono', 'JetBrains Mono', ui-monospace, monospace;
