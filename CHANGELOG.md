@@ -1,3 +1,10 @@
+## [1.22.2](https://github.com/SabinGhost19/ztAdminConsole/compare/v1.22.1...v1.22.2) (2026-06-24)
+
+
+### Bug Fixes
+
+* **operator:** don't wedge ZTA finalizer on transient TalonConfigError (graceful cleanup) ([40b6e4d](https://github.com/SabinGhost19/ztAdminConsole/commit/40b6e4d435bc0520f43569eb39ef38f0c516a1d8))
+
 ## [1.22.1](https://github.com/SabinGhost19/ztAdminConsole/compare/v1.22.0...v1.22.1) (2026-06-23)
 
 
