@@ -7,6 +7,16 @@ import vuetify from './plugins/vuetify'
 import { useNotificationStore } from './store/notification'
 import { useAuthStore } from './store/auth'
 
+// The browser fires a benign "ResizeObserver loop ..." error whenever a
+// ResizeObserver callback mutates layout within the same frame. Per the CSSOM
+// View spec this is a recoverable notification, NOT a real failure (the browser
+// settles on the next frame), and it is emitted constantly by ResizeObserver-
+// heavy libraries (Vuetify's resize logic, ApexCharts responsive resize,
+// Monaco's automaticLayout). It must never reach the user-facing error toast.
+function isBenignResizeObserverError(message?: string | null): boolean {
+  return !!message && message.includes('ResizeObserver loop')
+}
+
 async function start() {
   const app = createApp(App)
   const pinia = createPinia()
@@ -16,6 +26,12 @@ async function start() {
   const notificationStore = useNotificationStore(pinia)
 
   window.addEventListener('error', (event) => {
+    if (isBenignResizeObserverError(event.message)) {
+      // Swallow it: don't toast, don't propagate, suppress default logging.
+      event.preventDefault()
+      event.stopImmediatePropagation()
+      return
+    }
     notificationStore.addAlert({
       error_code: 'FRONTEND_RUNTIME_ERROR',
       message: event.message || 'A frontend runtime error occurred.',
@@ -32,6 +48,11 @@ async function start() {
 
   window.addEventListener('unhandledrejection', (event) => {
     const reason = event.reason
+    const reasonMessage = typeof reason === 'string' ? reason : (reason && reason.message) || ''
+    if (isBenignResizeObserverError(reasonMessage)) {
+      event.preventDefault()
+      return
+    }
     notificationStore.addAlert({
       error_code: 'FRONTEND_UNHANDLED_PROMISE',
       message: 'An unhandled async rejection occurred in the frontend.',
