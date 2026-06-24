@@ -5,6 +5,7 @@ import { useJitStore, JitSession } from '../store/jit'
 import { useNotificationStore } from '../store/notification'
 import { useDashboardStore } from '../store/dashboard'
 import { useAuthStore } from '../store/auth'
+import { JIT_ROLES } from '../constants/zta'
 import { ensureFreshToken, getToken, isBypass } from '../auth/keycloak'
 
 const jitStore = useJitStore()
@@ -185,7 +186,7 @@ const form = ref({
   reason: ''
 })
 
-const roles = ['view', 'edit', 'admin']
+const roles = JIT_ROLES
 
 const activeTab = ref('k8s')
 const webApps = ref<any[]>([])
@@ -360,7 +361,8 @@ async function submitRequest() {
     await jitStore.requestAccess({
       namespace: form.value.namespace,
       role: form.value.role,
-      duration: form.value.duration
+      duration: form.value.duration,
+      reason: form.value.reason,
     })
     await dashboardStore.fetchOverview()
     if (canReadAll.value) {
@@ -636,7 +638,7 @@ async function savePolicies() {
     
     <v-row>
       <v-col cols="12" md="5" lg="4">
-        <v-card class="gc-border h-100" style="border: 1px solid rgba(var(--v-theme-on-surface), 0.12)" flat>
+        <v-card class="gc-border h-100" flat>
           <v-card-title class="font-weight-medium pb-2 text-primary">Ephemeral Access Wizard (IAM)</v-card-title>
           <v-card-text>
             <p class="text-caption text-secondary mb-4">Choose the resource type for temporary JIT privilege escalation.</p>
@@ -861,7 +863,7 @@ async function savePolicies() {
                             <v-btn
                               v-if="canRevoke && (sess.status === 'ACTIVE' || sess.status === 'APPROVED' || sess.status === 'PENDING_APPROVAL' || sess.status === 'PENDING')"
                               size="x-small" variant="flat" color="error"
-                              @click="jitStore.revokeSession(sess.namespace, sess.id)"
+                              @click="promptRevoke(sess)"
                             >{{ (sess.status === 'PENDING_APPROVAL' || sess.status === 'PENDING') ? 'Cancel' : 'Revoke' }}</v-btn>
                             <v-btn
                               v-if="sess.status === 'EXPIRED' || sess.status === 'REVOKED' || sess.status === 'TAMPERED' || sess.status.startsWith('DENIED')"
@@ -967,7 +969,7 @@ async function savePolicies() {
       </v-col>
       
       <v-col cols="12" md="7" lg="8">
-        <v-card class="gc-border h-100" style="border: 1px solid rgba(var(--v-theme-on-surface), 0.12)" flat>
+        <v-card class="gc-border h-100" flat>
           <v-card-title class="font-weight-medium pb-2 text-error">
             <v-icon start color="error" class="mr-2">mdi-google-cloud</v-icon>
             IAM & Service Accounts Admin

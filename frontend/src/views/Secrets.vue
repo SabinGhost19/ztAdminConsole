@@ -4,6 +4,7 @@ import { api } from '../api/axios'
 import { useNotificationStore } from '../store/notification'
 import { useDashboardStore } from '../store/dashboard'
 import { useAuthStore } from '../store/auth'
+import { WORKLOAD_KINDS, MAPPING_TYPES } from '../constants/zta'
 
 const notifyStore = useNotificationStore()
 const dashboardStore = useDashboardStore()
@@ -13,10 +14,6 @@ const canWriteSecrets = computed(() => auth.can('secrets:write'))
 const isLoading = computed(() => dashboardStore.loadingSecrets)
 const secrets = computed(() => dashboardStore.secrets)
 const applications = computed(() => dashboardStore.applications)
-
-// Match the ZeroTrustSecret CRD enums exactly.
-const WORKLOAD_KINDS = ['Deployment', 'StatefulSet', 'DaemonSet']
-const MAPPING_TYPES = ['EnvVar', 'VolumeMount']
 
 interface MappingRow { remoteKey: string; localKey: string; type: string; mountPath: string }
 
@@ -173,11 +170,10 @@ async function submitSecretDeclaration() {
   try {
     const payload = buildPayload()
     const updating = isEditing.value
-    if (updating && editing.value) {
-      await api.put(`/zts/${editing.value.namespace}/${editing.value.name}`, payload)
-    } else {
-      await api.post('/zts/', payload)
-    }
+    const res = updating && editing.value
+      ? await api.put(`/zts/${editing.value.namespace}/${editing.value.name}`, payload)
+      : await api.post('/zts/', payload)
+    const uid = res.data?.metadata?.uid || ''
     await dashboardStore.fetchSecrets(true)
     await dashboardStore.fetchOverview(true)
 
@@ -186,9 +182,9 @@ async function submitSecretDeclaration() {
       message: updating
         ? `Delegația Zero-Trust Secret '${payload.name}' actualizată.`
         : `Delegația Zero-Trust Secret '${payload.name}' generată.`,
-      technical_details: `Path Vault delegat: ${payload.secretData.remotePath}`,
+      technical_details: `uid: ${uid || '—'} · path Vault: ${payload.secretData.remotePath}`,
       component: 'ZTS_BUILDER',
-      trace_id: Math.random().toString(36).substring(2),
+      trace_id: uid || payload.name,
       action_required: 'Operatorul ZTA validează, iar ESO preia secretul din Vault.',
       type: 'warning'
     })
@@ -202,7 +198,7 @@ async function submitSecretDeclaration() {
 
 async function revokeZts(namespace: string, name: string) {
   try {
-    await api.delete(`/zts/${namespace}/${name}`)
+    const res = await api.delete(`/zts/${namespace}/${name}`)
     if (editing.value && editing.value.namespace === namespace && editing.value.name === name) {
       resetForm()
     }
@@ -211,9 +207,9 @@ async function revokeZts(namespace: string, name: string) {
     notifyStore.addAlert({
       error_code: 'ZTS_REVOKED_SUCCESS',
       message: `Delegația ZTS '${name}' ștearsă cu succes din sistem.`,
-      technical_details: 'ESO va șterge automat TargetSecret-ul final (Garbage Collection via OwnerReferences).',
+      technical_details: res.data?.message || `ZTS ${namespace}/${name} șters; ESO face GC pe Secret prin ownerReferences.`,
       component: 'ZTS_ADMIN',
-      trace_id: Math.random().toString(36).substring(2),
+      trace_id: `${namespace}/${name}`,
       action_required: '',
       type: 'warning'
     })
@@ -228,7 +224,7 @@ async function revokeZts(namespace: string, name: string) {
 
     <v-row>
       <v-col cols="12" md="5" lg="4">
-        <v-card class="gc-border h-100" style="border: 1px solid rgba(var(--v-theme-on-surface), 0.12)" flat>
+        <v-card class="gc-border h-100" flat>
           <v-card-title class="font-weight-medium pb-2 text-primary d-flex align-center">
             <span>{{ isEditing ? `Editează: ${editing?.name}` : 'Delegare Vault' }}</span>
             <v-spacer />
@@ -303,7 +299,7 @@ async function revokeZts(namespace: string, name: string) {
       </v-col>
 
       <v-col cols="12" md="7" lg="8">
-        <v-card class="gc-border h-100" style="border: 1px solid rgba(var(--v-theme-on-surface), 0.12)" flat>
+        <v-card class="gc-border h-100" flat>
            <v-card-title class="font-weight-medium pb-2 text-error">
             <v-icon start color="error" class="mr-2">mdi-lock-pattern</v-icon> Secret Manager Vault Delegations
            </v-card-title>

@@ -21,7 +21,7 @@ async def list_jit_requests(namespace: str = "") -> list:
         logger.warning("JIT CRD unavailable, returning empty list: %s", e, extra={"details": {"namespace": namespace or None}})
         return []
 
-async def create_jit_request(namespace: str, name: str, user_email: str, duration: int, role: str, requires_approval: bool = True) -> dict:
+async def create_jit_request(namespace: str, name: str, user_email: str, duration: int, role: str, reason: str = "", requires_approval: bool = True) -> dict:
     logger.info(
         "Creating JIT request",
         extra={"details": {"namespace": namespace, "name": name, "user": user_email, "duration": duration, "role": role, "requiresApproval": requires_approval}},
@@ -41,7 +41,7 @@ async def create_jit_request(namespace: str, name: str, user_email: str, duratio
             "targetNamespace": namespace,
             "requestedRole": role,
             "duration": f"{duration}m",
-            "reason": f"Requested via UI by {user_email}",
+            "reason": (reason or "").strip() or f"Requested via UI by {user_email}",
             "requiresApproval": requires_approval,
         }
     }

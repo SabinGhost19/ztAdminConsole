@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 from typing import Any, Dict, List
 
-from app.services.sca_service import list_sca_policies, create_sca_policy, delete_sca_policy
+from app.services.sca_service import list_sca_policies, create_sca_policy, update_sca_policy, delete_sca_policy
 from app.security.identity import Identity, require_permission
 from app.security import permissions as perm
 
@@ -16,6 +16,10 @@ class ScaCreateIn(BaseModel):
     sbomPolicy: Dict[str, Any] = Field(default_factory=dict)
     policyBinding: Dict[str, Any] = Field(default_factory=dict)
     strictManifestHash: Dict[str, Any] = Field(default_factory=dict)
+    slsaProvenancePolicy: Dict[str, Any] = Field(default_factory=dict)
+    openVexPolicy: Dict[str, Any] = Field(default_factory=dict)
+    securityScanPolicy: Dict[str, Any] = Field(default_factory=dict)
+    customRules: List[Dict[str, Any]] = Field(default_factory=list)
     runtimeEnforcement: Dict[str, Any] = Field(default_factory=dict)
 
 @router.get("/")
@@ -37,9 +41,37 @@ async def create_sca(
         sbom_policy=payload.sbomPolicy,
         policy_binding=payload.policyBinding,
         strict_manifest_hash=payload.strictManifestHash,
+        slsa_provenance_policy=payload.slsaProvenancePolicy,
+        open_vex_policy=payload.openVexPolicy,
+        security_scan_policy=payload.securityScanPolicy,
+        custom_rules=payload.customRules,
         runtime_enforcement=payload.runtimeEnforcement,
     )
     return {"status": "created", "resource": res}
+
+
+@router.put("/{name}")
+async def update_sca(
+    name: str,
+    payload: ScaCreateIn,
+    identity: Identity = Depends(require_permission(perm.P_APPS_WRITE)),
+):
+    res = await update_sca_policy(
+        name=name,
+        user_email=identity.email,
+        source_validation=payload.sourceValidation,
+        provenance=payload.provenance,
+        vulnerability_policy=payload.vulnerabilityPolicy,
+        sbom_policy=payload.sbomPolicy,
+        policy_binding=payload.policyBinding,
+        strict_manifest_hash=payload.strictManifestHash,
+        slsa_provenance_policy=payload.slsaProvenancePolicy,
+        open_vex_policy=payload.openVexPolicy,
+        security_scan_policy=payload.securityScanPolicy,
+        custom_rules=payload.customRules,
+        runtime_enforcement=payload.runtimeEnforcement,
+    )
+    return {"status": "updated", "resource": res}
 
 @router.delete("/{name}")
 async def remove_sca(

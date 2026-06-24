@@ -172,7 +172,7 @@ loadKnownVulnerabilities()
       <v-spacer />
     </v-row>
 
-    <v-card variant="flat" class="gc-border mb-4" style="border: 1px solid rgba(var(--v-theme-on-surface), 0.12)">
+    <v-card variant="flat" class="gc-border mb-4">
       <!-- Tag filter: narrow the picker to a namespace bucket before searching. -->
       <v-card-text class="pb-0 d-flex align-center flex-wrap ga-2">
         <span class="text-caption text-medium-emphasis me-1">Filtrează după tag:</span>
@@ -267,7 +267,7 @@ loadKnownVulnerabilities()
 
     <!-- Legend: what each vulnerability namespace tag means and why it shows.
          Kept at the bottom of the view — minimalist, info-icon per tag. -->
-    <v-card variant="flat" class="mt-4" style="border: 1px solid rgba(var(--v-theme-on-surface), 0.12)">
+    <v-card variant="flat" class="gc-border mt-4">
       <v-card-text class="py-3 d-flex align-center flex-wrap ga-5">
         <span class="text-caption text-medium-emphasis text-uppercase" style="letter-spacing: 0.06em">
           Taguri de vulnerabilitate

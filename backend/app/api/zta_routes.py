@@ -25,6 +25,7 @@ class ZtaCreateIn(BaseModel):
     networkZeroTrust: Dict[str, Any] = Field(default_factory=dict, title="Politicile de ingress/egress zero trust")
     wafConfig: Dict[str, Any] = Field(default_factory=dict, title="Configurația WAF")
     runtimeSecurity: Dict[str, Any] = Field(default_factory=dict, title="Configurația runtime security")
+    ingress: Dict[str, Any] = Field(default_factory=dict, title="Expunere HTTP Ingress (OAuth2 / host / path)")
 
 @router.get("/", response_model=List[Dict[str, Any]])
 async def list_zta_applications(request: Request):
@@ -50,6 +51,32 @@ async def create_zta_application(
         network_zero_trust=data.networkZeroTrust,
         waf_config=data.wafConfig,
         runtime_security=data.runtimeSecurity,
+        ingress=data.ingress,
+    )
+    return res
+
+
+@router.put("/{namespace}/{name}", response_model=Dict[str, Any])
+async def update_zta_application(
+    namespace: str,
+    name: str,
+    data: ZtaCreateIn,
+    request: Request,
+    identity: Identity = Depends(require_permission(perm.P_APPS_WRITE)),
+):
+    res = await zta_service.update_zta_application(
+        namespace=namespace,
+        name=name,
+        user_email=identity.email,
+        labels=data.labels,
+        annotations=data.annotations,
+        image=data.image,
+        replicas=data.replicas,
+        security_policy_ref=data.securityPolicyRef.model_dump(exclude_none=True),
+        network_zero_trust=data.networkZeroTrust,
+        waf_config=data.wafConfig,
+        runtime_security=data.runtimeSecurity,
+        ingress=data.ingress,
     )
     return res
 

@@ -25,6 +25,9 @@ class JitCreateIn(BaseModel):
     role: str = Field(..., title="Rolul JIT cerut")
     # Kubernetes TokenRequest API requires spec.expirationSeconds >= 600 (10 minutes)
     duration: int = Field(60, ge=10, le=120)
+    # Operator-facing justification for the access (audit trail). Persisted to
+    # spec.reason on the JITAccessRequest CRD instead of a hardcoded placeholder.
+    reason: str = Field("", title="Justificarea cererii (audit trail)", max_length=512)
 
 
 class AntiAbuseIn(BaseModel):
@@ -117,6 +120,7 @@ async def create_jit_session(
         user_email=user_label,
         duration=data.duration,
         role=data.role,
+        reason=data.reason,
         requires_approval=True,
     )
     return res

@@ -1,8 +1,12 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, onMounted, onUnmounted, ref, watch } from 'vue'
 import type { AxiosError, AxiosResponse } from 'axios'
 import { useTheme } from 'vuetify'
-import { VueMonacoEditor } from '@guolao/vue-monaco-editor'
+// Monaco is heavy (~MBs). Load it only when the builder reaches the "Review"
+// step (v-stepper-window renders steps lazily), not on every /apps navigation.
+const VueMonacoEditor = defineAsyncComponent(() =>
+  import('@guolao/vue-monaco-editor').then((m) => m.VueMonacoEditor),
+)
 import { api } from '../api/axios'
 import BuildLedgerGraph from '../components/BuildLedgerGraph.vue'
 import ProvisioningPlan from '../components/ProvisioningPlan.vue'
@@ -16,6 +20,7 @@ import { useNotificationStore } from '../store/notification'
 import { useDashboardStore } from '../store/dashboard'
 import { useAuthStore } from '../store/auth'
 import { useIntegrityStream, type KopfEvent, type IntegrityStreamError } from '../composables/useIntegrityStream'
+import { WAF_MODES, WAF_PROFILES, ON_COMPROMISE_ACTIONS, ALLOWED_REGISTRY, FORBIDDEN_TAG, DEFAULT_NAMESPACE } from '../constants/zta'
 
 const notifyStore = useNotificationStore()
 const dashboardStore = useDashboardStore()
@@ -38,7 +43,7 @@ const monacoOptions = {
   scrollbar: { verticalScrollbarSize: 6, horizontalScrollbarSize: 6 },
 }
 
-const namespaces = ref<string[]>(['default'])
+const namespaces = ref<string[]>([DEFAULT_NAMESPACE])
 const isLoadingNamespaces = ref(false)
 
 const step = ref(1)
@@ -54,22 +59,137 @@ const integrityPoller = ref<number | null>(null)
 // interval (2s → 4s → 8s) — fast feedback right after submit, then back off.
 const pollingStartedAt = ref<number>(0)
 
-const form = ref({
-  name: '',
-  namespace: 'default',
-  image: '',
-  replicas: 1,
-  securityPolicyName: '',
-  ingressNamespace: '',
-  egressNamespace: '',
-  egressPorts: '5432',
-  wafMode: 'Block',
-  wafProfile: 'REST-API',
-  allowedPaths: '/tmp/app-data',
-  onCompromise: 'Isolate'
-})
+const editingApp = ref<{ namespace: string; name: string } | null>(null)
+const isEditingApp = computed(() => editingApp.value !== null)
 
-const wafProfiles = ['REST-API', 'SPA', 'GRPC', 'Strict-Baseline']
+function defaultIngress() {
+  return {
+    enabled: false,
+    host: '',
+    className: 'nginx',
+    path: '/',
+    pathType: 'Prefix',
+    servicePort: 80,
+    oauth2Enabled: true,
+    authUrl: '',
+    authSignin: '',
+    authResponseHeaders: '',
+    oauth2ServiceName: 'oauth2-proxy',
+    oauth2ServiceNamespace: 'oauth2-proxy',
+    oauth2ServicePort: 80,
+    oauth2IngressPath: '/oauth2',
+    groupsHeader: 'X-Forwarded-Groups',
+    groupsHeaderFallback: 'X-Auth-Request-Groups',
+  }
+}
+
+function defaultForm() {
+  return {
+    name: '',
+    namespace: DEFAULT_NAMESPACE,
+    image: '',
+    replicas: 1,
+    securityPolicyName: '',
+    ingressAllowedFrom: [{ namespace: '' }] as Array<{ namespace: string }>,
+    egressAllowedTo: [{ namespace: '', ports: '5432' }] as Array<{ namespace: string; ports: string }>,
+    wafMode: 'Block',
+    wafProfile: 'REST-API',
+    allowedPaths: '/tmp/app-data',
+    onCompromise: 'Isolate',
+    ingress: defaultIngress(),
+  }
+}
+
+const form = ref(defaultForm())
+
+function parsePorts(s: string): number[] {
+  return String(s || '')
+    .split(',')
+    .map((x) => Number.parseInt(x.trim(), 10))
+    .filter(Number.isFinite)
+}
+
+function addIngressRule() { form.value.ingressAllowedFrom.push({ namespace: '' }) }
+function removeIngressRule(i: number) {
+  if (form.value.ingressAllowedFrom.length > 1) form.value.ingressAllowedFrom.splice(i, 1)
+}
+function addEgressRule() { form.value.egressAllowedTo.push({ namespace: '', ports: '' }) }
+function removeEgressRule(i: number) {
+  if (form.value.egressAllowedTo.length > 1) form.value.egressAllowedTo.splice(i, 1)
+}
+
+function buildNetworkZeroTrust() {
+  return {
+    ingressAllowedFrom: form.value.ingressAllowedFrom
+      .filter((r) => r.namespace && r.namespace.trim())
+      .map((r) => ({ namespace: r.namespace.trim() })),
+    egressAllowedTo: form.value.egressAllowedTo
+      .filter((r) => r.namespace && r.namespace.trim())
+      .map((r) => ({ namespace: r.namespace.trim(), ports: parsePorts(r.ports) })),
+  }
+}
+
+function buildIngress() {
+  const ing = form.value.ingress
+  if (!ing.enabled) return { enabled: false }
+  return {
+    enabled: true,
+    host: ing.host,
+    className: ing.className,
+    path: ing.path,
+    pathType: ing.pathType,
+    servicePort: Number(ing.servicePort) || 80,
+    oauth2Enabled: ing.oauth2Enabled,
+    authUrl: ing.authUrl,
+    authSignin: ing.authSignin,
+    authResponseHeaders: ing.authResponseHeaders,
+    oauth2ServiceName: ing.oauth2ServiceName,
+    oauth2ServiceNamespace: ing.oauth2ServiceNamespace,
+    oauth2ServicePort: Number(ing.oauth2ServicePort) || 80,
+    oauth2IngressPath: ing.oauth2IngressPath,
+    groupsHeader: ing.groupsHeader,
+    groupsHeaderFallback: ing.groupsHeaderFallback,
+  }
+}
+
+function resetBuilder() {
+  form.value = defaultForm()
+  editingApp.value = null
+  step.value = 1
+}
+function cancelEditApp() { resetBuilder() }
+
+function startEditApp() {
+  const sel = selectedApplication.value
+  if (!sel) return
+  const [ns, nm] = sel.split('/')
+  const app = applications.value.find((a: any) => a.metadata?.namespace === ns && a.metadata?.name === nm)
+  if (!app) return
+  const spec = app.spec || {}
+  const nzt = spec.networkZeroTrust || {}
+  const ingFrom = (nzt.ingressAllowedFrom || []).map((r: any) => ({ namespace: r.namespace || '' }))
+  const egTo = (nzt.egressAllowedTo || []).map((r: any) => ({ namespace: r.namespace || '', ports: (r.ports || []).join(', ') }))
+  form.value = {
+    name: app.metadata.name,
+    namespace: app.metadata.namespace,
+    image: spec.image || '',
+    replicas: spec.replicas || 1,
+    securityPolicyName: spec.securityPolicyRef?.name || '',
+    ingressAllowedFrom: ingFrom.length ? ingFrom : [{ namespace: '' }],
+    egressAllowedTo: egTo.length ? egTo : [{ namespace: '', ports: '' }],
+    wafMode: spec.wafConfig?.mode || 'Block',
+    wafProfile: spec.wafConfig?.appProfile || 'REST-API',
+    allowedPaths: (spec.runtimeSecurity?.allowedPaths || []).join(', '),
+    onCompromise: spec.runtimeSecurity?.onCompromise || 'Isolate',
+    ingress: { ...defaultIngress(), ...(spec.ingress || {}) },
+  }
+  editingApp.value = { namespace: ns, name: nm }
+  builderPanels.value = [0]
+  step.value = 1
+  if (typeof window !== 'undefined') window.scrollTo({ top: 0, behavior: 'smooth' })
+}
+
+const wafProfiles = WAF_PROFILES
 const applications = computed(() => dashboardStore.applications)
 const applicationOptions = computed(() => dashboardStore.applicationOptions)
 
@@ -474,8 +594,8 @@ const integrityCriticalIssues = computed(() => {
 
 const imageError = computed(() => {
   if (!form.value.image) return ''
-  if (!form.value.image.startsWith('ghcr.io/')) return 'Violation: Imaginea trebuie să fie din ghcr.io/'
-  if (form.value.image.endsWith(':latest')) return 'Violation: Tag-ul "latest" este strict interzis în producție.'
+  if (!form.value.image.startsWith(ALLOWED_REGISTRY)) return 'Violation: Imaginea trebuie să fie din ghcr.io/'
+  if (form.value.image.endsWith(FORBIDDEN_TAG)) return 'Violation: Tag-ul "latest" este strict interzis în producție.'
   return ''
 })
 
@@ -505,15 +625,31 @@ function formatSanctionTimestamp(ts?: string): string {
 }
 
 const yamlPreview = computed(() => {
-  const egressPorts = form.value.egressPorts
-    .split(',')
-    .map(item => Number.parseInt(item.trim(), 10))
-    .filter(Number.isFinite)
-
   const allowedPaths = form.value.allowedPaths
     .split(',')
     .map(item => item.trim())
     .filter(Boolean)
+
+  const nzt = buildNetworkZeroTrust()
+  const ingressLines = nzt.ingressAllowedFrom.length
+    ? nzt.ingressAllowedFrom.map(r => `      - namespace: ${r.namespace}`).join('\n')
+    : '      []'
+  const egressLines = nzt.egressAllowedTo.length
+    ? nzt.egressAllowedTo.map(r => `      - namespace: ${r.namespace}\n        ports: [${r.ports.join(', ')}]`).join('\n')
+    : '      []'
+
+  const ing = buildIngress()
+  let ingressBlock = `  ingress:\n    enabled: false`
+  if (ing.enabled) {
+    ingressBlock = `  ingress:
+    enabled: true
+    host: ${ing.host || ''}
+    className: ${ing.className}
+    path: ${ing.path}
+    pathType: ${ing.pathType}
+    servicePort: ${ing.servicePort}
+    oauth2Enabled: ${ing.oauth2Enabled}`
+  }
 
   return `apiVersion: devsecops.licenta.ro/v1
 kind: ZeroTrustApplication
@@ -527,17 +663,17 @@ spec:
     name: ${form.value.securityPolicyName || 'demo-app-security-policy'}
   networkZeroTrust:
     ingressAllowedFrom:
-      - namespace: ${form.value.ingressNamespace || 'api-gateway'}
+${ingressLines}
     egressAllowedTo:
-      - namespace: ${form.value.egressNamespace || 'database'}
-        ports: [${egressPorts.join(', ')}]
+${egressLines}
   wafConfig:
     mode: ${form.value.wafMode}
     appProfile: ${form.value.wafProfile}
   runtimeSecurity:
     allowedPaths:
 ${allowedPaths.map(path => `      - ${path}`).join('\n')}
-    onCompromise: ${form.value.onCompromise}`
+    onCompromise: ${form.value.onCompromise}
+${ingressBlock}`
 })
 
 onMounted(() => {
@@ -599,10 +735,6 @@ async function revalidateIntegrity() {
 
 function submitDeclaration() {
   isSubmitting.value = true
-  const egressPorts = form.value.egressPorts
-    .split(',')
-    .map(item => Number.parseInt(item.trim(), 10))
-    .filter(Number.isFinite)
 
   const payload = {
     name: form.value.name || 'myapp',
@@ -614,10 +746,7 @@ function submitDeclaration() {
     securityPolicyRef: {
       name: form.value.securityPolicyName,
     },
-    networkZeroTrust: {
-      ingressAllowedFrom: [{ namespace: form.value.ingressNamespace || 'api-gateway' }],
-      egressAllowedTo: [{ namespace: form.value.egressNamespace || 'database', ports: egressPorts }],
-    },
+    networkZeroTrust: buildNetworkZeroTrust(),
     wafConfig: {
       mode: form.value.wafMode,
       appProfile: form.value.wafProfile,
@@ -626,12 +755,20 @@ function submitDeclaration() {
       allowedPaths: form.value.allowedPaths.split(',').map(item => item.trim()).filter(Boolean),
       onCompromise: form.value.onCompromise,
     },
+    ingress: buildIngress(),
   }
 
-  api.post('/zta/', payload)
+  const editing = editingApp.value
+  const request = editing
+    ? api.put(`/zta/${editing.namespace}/${editing.name}`, payload)
+    : api.post('/zta/', payload)
+
+  request
     .then((response: AxiosResponse<any>) => {
       isSubmitting.value = false
       step.value = 1
+      const wasEditing = !!editing
+      editingApp.value = null
       const savedSelection = selectedApplication.value
       dashboardStore.fetchApplications(true)
         .then(() => {
@@ -642,8 +779,8 @@ function submitDeclaration() {
         .catch(() => undefined)
       dashboardStore.fetchOverview().catch(() => undefined)
       notifyStore.addAlert({
-        error_code: 'ZTA_CREATED_SUCCESS',
-        message: `Aplicația ZTA ${response.data.metadata?.name || 'cu succes'} a fost creată!`,
+        error_code: wasEditing ? 'ZTA_UPDATED_SUCCESS' : 'ZTA_CREATED_SUCCESS',
+        message: `Aplicația ZTA ${response.data.metadata?.name || 'cu succes'} a fost ${wasEditing ? 'actualizată' : 'creată'}!`,
         technical_details: JSON.stringify(response.data, null, 2),
         component: 'ZTA_BUILDER',
         trace_id: response.data.metadata?.uid || `TRC-${Math.random().toString(36).substring(2)}`,
@@ -676,7 +813,7 @@ function submitDeclaration() {
     <p class="text-body-2 text-secondary mb-4">Monitorizare, alertare și investigație pentru resursele ZeroTrustApplication. Builder-ul este disponibil mai jos, on-demand.</p>
     <v-row>
       <v-col cols="12" lg="4">
-        <v-card class="gc-border mb-4" style="border: 1px solid rgba(var(--v-theme-on-surface), 0.12)" flat>
+        <v-card class="gc-border mb-4" flat>
           <v-card-title class="font-weight-medium pb-2 text-primary d-flex align-center justify-space-between">
             <span>Existing Applications</span>
             <v-chip size="x-small" variant="tonal" color="primary">
@@ -804,7 +941,7 @@ function submitDeclaration() {
       </v-col>
 
       <v-col cols="12" lg="8">
-        <v-card class="gc-border" style="border: 1px solid rgba(var(--v-theme-on-surface), 0.12)" flat>
+        <v-card class="gc-border" flat>
           <v-card-title class="font-weight-medium pb-2 text-primary d-flex align-center justify-space-between">
             <span>Integrity Ledger</span>
             <div class="d-flex ga-2">
@@ -820,6 +957,9 @@ function submitDeclaration() {
               </v-btn>
               <v-btn size="small" variant="outlined" color="primary" :disabled="!selectedApplication" :loading="isRevalidating" @click="revalidateIntegrity">
                 Revalidate OCI
+              </v-btn>
+              <v-btn size="small" variant="outlined" color="secondary" :disabled="!selectedApplication || !canWriteApps" prepend-icon="mdi-pencil" @click="startEditApp">
+                Edit
               </v-btn>
             </div>
           </v-card-title>
@@ -1015,65 +1155,34 @@ function submitDeclaration() {
                       <h3 class="text-subtitle-1 font-weight-medium mb-4">Microsegmentation & Coraza WAF</h3>
                       <v-row>
                         <v-col cols="12" md="6">
-                          <v-combobox
-                            v-model="form.ingressNamespace"
-                            :items="namespaces"
-                            label="Allow Ingress From (namespace)"
-                            variant="outlined"
-                            density="compact"
-                            :loading="isLoadingNamespaces"
-                            no-data-text="No namespaces found"
-                            hint="Select a cluster namespace or type a custom one"
-                            persistent-hint
-                          >
-                            <template v-slot:append-inner>
-                              <v-tooltip location="top" max-width="300">
-                                <template v-slot:activator="{ props }">
-                                  <v-icon v-bind="props" size="small" color="secondary" style="cursor:help;">mdi-help-circle-outline</v-icon>
-                                </template>
-                                <span>The Kubernetes namespace from which ingress traffic is allowed. Maps to a Cilium NetworkPolicy ingressAllowedFrom rule. Only pods in this namespace can reach your application.</span>
-                              </v-tooltip>
-                            </template>
-                          </v-combobox>
+                          <div class="d-flex align-center mb-1">
+                            <span class="text-caption font-weight-medium">Allow Ingress From (namespaces)</span>
+                            <v-spacer />
+                            <v-btn size="x-small" variant="text" color="primary" prepend-icon="mdi-plus" @click="addIngressRule">Add</v-btn>
+                          </div>
+                          <div v-for="(rule, i) in form.ingressAllowedFrom" :key="`in-${i}`" class="d-flex align-center ga-2 mb-2">
+                            <v-combobox v-model="rule.namespace" :items="namespaces" label="Namespace" variant="outlined" density="compact" hide-details :loading="isLoadingNamespaces" no-data-text="No namespaces found" class="flex-grow-1" />
+                            <v-btn v-if="form.ingressAllowedFrom.length > 1" size="x-small" variant="text" color="error" icon="mdi-close" @click="removeIngressRule(i)" />
+                          </div>
+                          <div class="text-caption text-secondary">Each entry maps to a Cilium NetworkPolicy ingressAllowedFrom rule.</div>
                         </v-col>
                         <v-col cols="12" md="6">
-                          <v-combobox
-                            v-model="form.egressNamespace"
-                            :items="namespaces"
-                            label="Allow Egress To (namespace)"
-                            variant="outlined"
-                            density="compact"
-                            :loading="isLoadingNamespaces"
-                            no-data-text="No namespaces found"
-                            hint="Select a cluster namespace or type a custom one"
-                            persistent-hint
-                          >
-                            <template v-slot:append-inner>
-                              <v-tooltip location="top" max-width="300">
-                                <template v-slot:activator="{ props }">
-                                  <v-icon v-bind="props" size="small" color="secondary" style="cursor:help;">mdi-help-circle-outline</v-icon>
-                                </template>
-                                <span>The namespace your app is allowed to send traffic to. Maps to egressAllowedTo in CiliumNetworkPolicy. Restricts all outbound connections to the specified namespace only.</span>
-                              </v-tooltip>
-                            </template>
-                          </v-combobox>
-                        </v-col>
-                        <v-col cols="12" md="6">
-                          <v-text-field v-model="form.egressPorts" label="Allowed Egress Ports" variant="outlined" density="compact">
-                            <template v-slot:append-inner>
-                              <v-tooltip location="top" max-width="280">
-                                <template v-slot:activator="{ props }">
-                                  <v-icon v-bind="props" size="small" color="secondary" style="cursor:help;">mdi-help-circle-outline</v-icon>
-                                </template>
-                                <span>Comma-separated TCP port numbers allowed for egress. E.g., "5432" for PostgreSQL, "6379" for Redis. Leave empty to block all egress except explicit rules.</span>
-                              </v-tooltip>
-                            </template>
-                          </v-text-field>
+                          <div class="d-flex align-center mb-1">
+                            <span class="text-caption font-weight-medium">Allow Egress To (namespace + ports)</span>
+                            <v-spacer />
+                            <v-btn size="x-small" variant="text" color="primary" prepend-icon="mdi-plus" @click="addEgressRule">Add</v-btn>
+                          </div>
+                          <div v-for="(rule, i) in form.egressAllowedTo" :key="`eg-${i}`" class="d-flex align-center ga-2 mb-2">
+                            <v-combobox v-model="rule.namespace" :items="namespaces" label="Namespace" variant="outlined" density="compact" hide-details :loading="isLoadingNamespaces" no-data-text="No namespaces found" class="flex-grow-1" />
+                            <v-text-field v-model="rule.ports" label="Ports (CSV)" placeholder="5432, 6379" variant="outlined" density="compact" hide-details style="max-width: 170px" />
+                            <v-btn v-if="form.egressAllowedTo.length > 1" size="x-small" variant="text" color="error" icon="mdi-close" @click="removeEgressRule(i)" />
+                          </div>
+                          <div class="text-caption text-secondary">Per-destination ports → egressAllowedTo. Leave ports empty to allow the namespace on any port.</div>
                         </v-col>
                         <v-col cols="12">
                           <v-row>
                             <v-col cols="12" md="6">
-                              <v-select v-model="form.wafMode" :items="['Monitor', 'Block']" label="WAF Mode" variant="outlined" density="compact">
+                              <v-select v-model="form.wafMode" :items="WAF_MODES" label="WAF Mode" variant="outlined" density="compact">
                                 <template v-slot:append-inner>
                                   <v-tooltip location="top" max-width="300">
                                     <template v-slot:activator="{ props }">
@@ -1099,6 +1208,42 @@ function submitDeclaration() {
                           </v-row>
                         </v-col>
                       </v-row>
+                      <v-divider class="my-5"></v-divider>
+                      <div class="d-flex align-center mb-2">
+                        <h4 class="text-subtitle-2 font-weight-medium">HTTP Ingress (optional)</h4>
+                        <v-spacer></v-spacer>
+                        <v-switch v-model="form.ingress.enabled" color="primary" density="compact" hide-details label="Expose via Ingress"></v-switch>
+                      </div>
+                      <v-row v-if="form.ingress.enabled">
+                        <v-col cols="12" md="6"><v-text-field v-model="form.ingress.host" label="Host" placeholder="app.example.com" variant="outlined" density="compact" hide-details="auto"></v-text-field></v-col>
+                        <v-col cols="6" md="3"><v-text-field v-model="form.ingress.className" label="Ingress Class" variant="outlined" density="compact" hide-details></v-text-field></v-col>
+                        <v-col cols="6" md="3"><v-text-field v-model.number="form.ingress.servicePort" label="Service Port" type="number" variant="outlined" density="compact" hide-details></v-text-field></v-col>
+                        <v-col cols="6" md="3"><v-text-field v-model="form.ingress.path" label="Path" variant="outlined" density="compact" hide-details></v-text-field></v-col>
+                        <v-col cols="6" md="3"><v-text-field v-model="form.ingress.pathType" label="Path Type" variant="outlined" density="compact" hide-details></v-text-field></v-col>
+                        <v-col cols="12" md="6" class="d-flex align-center">
+                          <v-switch v-model="form.ingress.oauth2Enabled" color="primary" density="compact" hide-details label="Protect with OAuth2 (oauth2-proxy)"></v-switch>
+                        </v-col>
+                        <v-col v-if="form.ingress.oauth2Enabled" cols="12">
+                          <v-expansion-panels variant="accordion">
+                            <v-expansion-panel title="OAuth2 / forward-auth (advanced)">
+                              <v-expansion-panel-text>
+                                <v-row>
+                                  <v-col cols="12" md="6"><v-text-field v-model="form.ingress.authUrl" label="authUrl" variant="outlined" density="compact" hide-details></v-text-field></v-col>
+                                  <v-col cols="12" md="6"><v-text-field v-model="form.ingress.authSignin" label="authSignin" variant="outlined" density="compact" hide-details></v-text-field></v-col>
+                                  <v-col cols="12"><v-text-field v-model="form.ingress.authResponseHeaders" label="authResponseHeaders" variant="outlined" density="compact" hide-details></v-text-field></v-col>
+                                  <v-col cols="12" md="4"><v-text-field v-model="form.ingress.oauth2ServiceName" label="oauth2ServiceName" variant="outlined" density="compact" hide-details></v-text-field></v-col>
+                                  <v-col cols="12" md="4"><v-text-field v-model="form.ingress.oauth2ServiceNamespace" label="oauth2ServiceNamespace" variant="outlined" density="compact" hide-details></v-text-field></v-col>
+                                  <v-col cols="6" md="4"><v-text-field v-model.number="form.ingress.oauth2ServicePort" label="oauth2ServicePort" type="number" variant="outlined" density="compact" hide-details></v-text-field></v-col>
+                                  <v-col cols="12" md="4"><v-text-field v-model="form.ingress.oauth2IngressPath" label="oauth2IngressPath" variant="outlined" density="compact" hide-details></v-text-field></v-col>
+                                  <v-col cols="12" md="4"><v-text-field v-model="form.ingress.groupsHeader" label="groupsHeader" variant="outlined" density="compact" hide-details></v-text-field></v-col>
+                                  <v-col cols="12" md="4"><v-text-field v-model="form.ingress.groupsHeaderFallback" label="groupsHeaderFallback" variant="outlined" density="compact" hide-details></v-text-field></v-col>
+                                </v-row>
+                              </v-expansion-panel-text>
+                            </v-expansion-panel>
+                          </v-expansion-panels>
+                        </v-col>
+                      </v-row>
+
                       <div class="d-flex mt-6">
                         <v-btn variant="text" @click="step = 1">Back</v-btn>
                         <v-spacer></v-spacer>
@@ -1121,7 +1266,7 @@ function submitDeclaration() {
                           </v-tooltip>
                         </template>
                       </v-text-field>
-                      <v-select v-model="form.onCompromise" :items="['Isolate', 'Kill']" label="On Compromise Action" variant="outlined" density="compact" class="mt-4">
+                      <v-select v-model="form.onCompromise" :items="ON_COMPROMISE_ACTIONS" label="On Compromise Action" variant="outlined" density="compact" class="mt-4">
                         <template v-slot:append-inner>
                           <v-tooltip location="top" max-width="320">
                             <template v-slot:activator="{ props }">
@@ -1157,8 +1302,9 @@ function submitDeclaration() {
                       <div class="d-flex mt-6">
                         <v-btn variant="text" @click="step = 3">Edit Specs</v-btn>
                         <v-spacer></v-spacer>
+                        <v-btn v-if="isEditingApp" variant="text" color="secondary" class="mr-2" @click="cancelEditApp">Cancel edit</v-btn>
                         <v-btn color="success" :disabled="!canWriteApps" @click="submitDeclaration" :loading="isSubmitting" variant="flat" prepend-icon="mdi-google-cloud">
-                          {{ canWriteApps ? 'Deploy ZTA Application' : 'Necesită platform-engineer' }}
+                          {{ !canWriteApps ? 'Necesită platform-engineer' : (isEditingApp ? 'Update ZTA Application' : 'Deploy ZTA Application') }}
                         </v-btn>
                       </div>
                     </div>

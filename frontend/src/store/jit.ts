@@ -35,7 +35,7 @@ export const useJitStore = defineStore('jit', {
       }
     },
     
-    async requestAccess(data: { namespace: string, role: string, duration: number }) {
+    async requestAccess(data: { namespace: string, role: string, duration: number, reason?: string }) {
       this.isSubmitting = true;
       try {
         await api.post('/jit/request', data);

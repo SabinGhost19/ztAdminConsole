@@ -44,7 +44,7 @@ const severityColor = (sev: string) => {
 </script>
 
 <template>
-  <v-card variant="flat" class="gc-border" style="border: 1px solid rgba(var(--v-theme-on-surface), 0.12)">
+  <v-card variant="flat" class="gc-border">
     <v-card-title class="d-flex align-center ga-2">
       <v-icon>mdi-bug-outline</v-icon>
       <span>Vulnerabilities &mdash; Trivy ∩ OpenVEX</span>

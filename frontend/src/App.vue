@@ -395,6 +395,9 @@ body {
 }
 
 /* Material 3 Google Cloud Borders */
+.gc-border {
+  border: 1px solid rgba(var(--v-theme-on-surface), 0.12);
+}
 .gc-border-bottom {
   border-bottom: 1px solid rgba(var(--v-theme-on-surface), 0.12) !important;
 }

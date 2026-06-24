@@ -388,7 +388,9 @@ function formatDuration(seconds: number) {
 onMounted(() => {
   refreshAll()
   refreshTimer = setInterval(() => {
-    if (liveRefresh.value) refreshAll()
+    // Skip the 5-call refresh when the tab is hidden — avoids hammering the
+    // backend while the user isn't looking.
+    if (liveRefresh.value && document.visibilityState !== 'hidden') refreshAll()
   }, 5000)
 })
 
